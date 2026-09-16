@@ -1,0 +1,21 @@
+# Build artifacts
+LayoutManager.app
+*.app
+build/
+
+# Xcode / Swift (in case you migrate to Xcode/SPM later)
+DerivedData/
+xcuserdata/
+*.xcworkspace
+*.xcodeproj/project.xcworkspace
+*.xcodeproj/xcuserdata
+.swiftpm/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor / Temp files
+*~
+*.swp
