@@ -1,25 +1,57 @@
 import AppKit
 
 enum ScreenGeometry {
-    static func orderedScreens() -> [NSScreen] {
+    static func owningScreen() -> NSScreen? {
+        let mouseLoc = NSEvent.mouseLocation
+        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) {
+            return screen
+        }
+        return NSScreen.main ?? NSScreen.screens.first
+    }
+
+    static func orderedScreens(owning: NSScreen? = nil) -> [NSScreen] {
         let all = NSScreen.screens
-        guard let active = NSScreen.main ?? all.first else { return [] }
+        guard let active = owning ?? owningScreen() ?? all.first else { return [] }
         return [active] + all.filter { $0 !== active }.sorted { $0.frame.minX < $1.frame.minX }
     }
 
     private static var axTop: CGFloat {
-        (NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.main)?.frame.maxY ?? 0
+        (NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.screens.first)?.frame.maxY ?? 0
     }
 
     static func axVisibleFrame(of screen: NSScreen) -> CGRect {
         let vf = screen.visibleFrame
-        return CGRect(x: vf.minX, y: axTop - vf.maxY, width: vf.width, height: vf.height)
+        var axRect = CGRect(x: vf.minX, y: axTop - vf.maxY, width: vf.width, height: vf.height)
+
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        for w in list {
+            let layer = w[kCGWindowLayer as String] as? Int ?? 0
+            let name = w[kCGWindowName as String] as? String ?? ""
+            if layer == 24, name == "Menubar", let b = w[kCGWindowBounds as String] as? [String: Any] {
+                let mbX = b["X"] as? CGFloat ?? 0
+                let mbY = b["Y"] as? CGFloat ?? 0
+                let mbW = b["Width"] as? CGFloat ?? 0
+                let mbH = b["Height"] as? CGFloat ?? 0
+                let mbRect = CGRect(x: mbX, y: mbY, width: mbW, height: mbH)
+
+                if mbRect.intersects(CGRect(x: axRect.minX, y: axRect.minY, width: axRect.width, height: mbH + 5)) {
+                    let diff = mbRect.maxY - axRect.minY
+                    if diff > 0 && diff < 100 {
+                        axRect.origin.y += diff
+                        axRect.size.height -= diff
+                    }
+                }
+            }
+        }
+        return axRect
     }
 
-    static func axVisibleFrames() -> [CGRect] { orderedScreens().map(axVisibleFrame(of:)) }
+    static func axVisibleFrames(owning: NSScreen? = nil) -> [CGRect] {
+        orderedScreens(owning: owning).map(axVisibleFrame(of:))
+    }
 
-    static func axVisibleFrame(ofScreen index: Int) -> CGRect? {
-        let frames = axVisibleFrames()
+    static func axVisibleFrame(ofScreen index: Int, owning: NSScreen? = nil) -> CGRect? {
+        let frames = axVisibleFrames(owning: owning)
         return index < frames.count ? frames[index] : nil
     }
 
@@ -27,8 +59,8 @@ enum ScreenGeometry {
         axVisibleFrame(ofScreen: 0) ?? CGRect(x: 0, y: 0, width: 1512, height: 982)
     }
 
-    static func aspectRatio(ofScreen index: Int) -> CGFloat {
-        let r = axVisibleFrame(ofScreen: index) ?? activeVisibleFrame
+    static func aspectRatio(ofScreen index: Int, owning: NSScreen? = nil) -> CGFloat {
+        let r = axVisibleFrame(ofScreen: index, owning: owning) ?? activeVisibleFrame
         return r.height > 0 ? r.width / r.height : 16.0 / 9.0
     }
 

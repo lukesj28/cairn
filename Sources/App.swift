@@ -75,7 +75,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func restoreStack(_ sender: NSMenuItem) {
         if let stack = sender.representedObject as? Stack {
-            WindowEngine.restore(stack: stack)
+            let owning = ScreenGeometry.owningScreen()
+            WindowEngine.restore(stack: stack, owningScreen: owning)
         }
     }
 }
