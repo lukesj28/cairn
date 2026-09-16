@@ -1,6 +1,6 @@
 import Foundation
 
-struct Profile: Codable, Identifiable {
+struct Stack: Codable, Identifiable {
     var id: UUID = UUID()
     var name: String
     var windows: [WindowSnapshot]

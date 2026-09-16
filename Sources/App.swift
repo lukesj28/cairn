@@ -5,7 +5,7 @@ import Combine
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
-    var profileManager = ProfileManager()
+    var stackManager = StackManager()
     var settingsWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
 
@@ -19,13 +19,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: "LayoutManager")
+            button.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: "Cairn")
         }
 
         buildMenu()
 
-        // Rebuild menu when profiles change
-        profileManager.$profiles
+        // Rebuild menu when stacks change
+        stackManager.$stacks
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.buildMenu()
@@ -48,10 +48,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem.separator())
 
-        for profile in profileManager.profiles {
-            let item = NSMenuItem(title: "Restore: \(profile.name)", action: #selector(restoreProfile(_:)), keyEquivalent: "")
+        for stack in stackManager.stacks {
+            let item = NSMenuItem(title: "Restore: \(stack.name)", action: #selector(restoreStack(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = profile
+            item.representedObject = stack
             menu.addItem(item)
         }
 
@@ -65,14 +65,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings() {
         if settingsWindow == nil {
-            let view = SettingsView(profileManager: profileManager)
+            let view = SettingsView(stackManager: stackManager)
             let hostingController = NSHostingController(rootView: view)
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
                                   styleMask: [.titled, .closable, .resizable, .miniaturizable],
                                   backing: .buffered, defer: false)
             window.center()
             window.contentViewController = hostingController
-            window.title = "LayoutManager Settings"
+            window.title = "Cairn Settings"
             window.isReleasedWhenClosed = false
             self.settingsWindow = window
         }
@@ -83,19 +83,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func snapshotLayout() {
         let windows = WindowEngine.snapshot()
         let name = "Snapshot \(Date().formatted(date: .abbreviated, time: .shortened))"
-        let newProfile = Profile(name: name, windows: windows, terminalCommands: [], browserURLs: [])
-        profileManager.addProfile(newProfile)
+        let newStack = Stack(name: name, windows: windows, terminalCommands: [], browserURLs: [])
+        stackManager.addStack(newStack)
     }
 
-    @objc func restoreProfile(_ sender: NSMenuItem) {
-        if let profile = sender.representedObject as? Profile {
-            WindowEngine.restore(profile: profile)
+    @objc func restoreStack(_ sender: NSMenuItem) {
+        if let stack = sender.representedObject as? Stack {
+            WindowEngine.restore(stack: stack)
 
             // Execute terminal commands
-            TerminalAdapter.execute(commands: profile.terminalCommands)
+            TerminalAdapter.execute(commands: stack.terminalCommands)
 
             // Launch browsers
-            for urlString in profile.browserURLs {
+            for urlString in stack.browserURLs {
                 if let url = URL(string: urlString) {
                     NSWorkspace.shared.open(url)
                 }

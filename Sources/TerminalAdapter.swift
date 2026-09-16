@@ -37,7 +37,7 @@ class TerminalAdapter {
 
     private static func executeFallback(_ command: String) {
         let tempDir = FileManager.default.temporaryDirectory
-        let scriptURL = tempDir.appendingPathComponent("layout_manager_cmd_\(UUID().uuidString).command")
+        let scriptURL = tempDir.appendingPathComponent("cairn_cmd_\(UUID().uuidString).command")
 
         let scriptContent = """
         #!/bin/bash

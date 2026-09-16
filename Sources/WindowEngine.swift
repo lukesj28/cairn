@@ -64,12 +64,12 @@ class WindowEngine {
         return snapshots
     }
 
-    static func restore(profile: Profile) {
+    static func restore(stack: Stack) {
         guard isTrusted() else { return }
         let workspace = NSWorkspace.shared
 
         var bundleIds = Set<String>()
-        for w in profile.windows { bundleIds.insert(w.bundleIdentifier) }
+        for w in stack.windows { bundleIds.insert(w.bundleIdentifier) }
 
         for bundleId in bundleIds {
             let config = NSWorkspace.OpenConfiguration()
@@ -78,7 +78,7 @@ class WindowEngine {
             if let url = workspace.urlForApplication(withBundleIdentifier: bundleId) {
                 workspace.openApplication(at: url, configuration: config) { app, error in
                     if let app = app {
-                        ensureWindows(for: app, targetCount: profile.windows.filter { $0.bundleIdentifier == bundleId }.count)
+                        ensureWindows(for: app, targetCount: stack.windows.filter { $0.bundleIdentifier == bundleId }.count)
                     }
                 }
             }
@@ -89,7 +89,7 @@ class WindowEngine {
             for _ in 0..<15 {
                 Thread.sleep(forTimeInterval: 0.5)
                 DispatchQueue.main.sync {
-                    self.applyWindowFrames(profile: profile)
+                    self.applyWindowFrames(stack: stack)
                 }
             }
         }
@@ -127,13 +127,13 @@ class WindowEngine {
         }
     }
 
-    private static func applyWindowFrames(profile: Profile) {
+    private static func applyWindowFrames(stack: Stack) {
         let workspace = NSWorkspace.shared
 
         for app in workspace.runningApplications {
             guard app.activationPolicy == .regular, let bundleId = app.bundleIdentifier else { continue }
 
-            let targetWindows = profile.windows.filter { $0.bundleIdentifier == bundleId }
+            let targetWindows = stack.windows.filter { $0.bundleIdentifier == bundleId }
             if targetWindows.isEmpty { continue }
 
             let pid = app.processIdentifier

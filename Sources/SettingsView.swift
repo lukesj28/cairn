@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var profileManager: ProfileManager
+    @ObservedObject var stackManager: StackManager
     @State private var hasPermissions = WindowEngine.isTrusted(promptIfNeeded: false)
 
     var body: some View {
@@ -10,7 +10,7 @@ struct SettingsView: View {
                 VStack {
                     Text("Accessibility Permissions Required")
                         .font(.headline)
-                    Text("LayoutManager needs permission to manipulate windows.")
+                    Text("Cairn needs permission to manipulate windows.")
                     Button("Request Permission") {
                         _ = WindowEngine.isTrusted(promptIfNeeded: true)
                         hasPermissions = WindowEngine.isTrusted(promptIfNeeded: false)
@@ -24,25 +24,25 @@ struct SettingsView: View {
 
             NavigationView {
                 List {
-                    ForEach(profileManager.profiles) { profile in
-                        NavigationLink(destination: ProfileDetailView(profile: profile, manager: profileManager)) {
-                            Text(profile.name)
+                    ForEach(stackManager.stacks) { stack in
+                        NavigationLink(destination: StackDetailView(stack: stack, manager: stackManager)) {
+                            Text(stack.name)
                         }
                     }
-                    .onDelete(perform: profileManager.deleteProfile)
+                    .onDelete(perform: stackManager.deleteStack)
                 }
-                .navigationTitle("Profiles")
+                .navigationTitle("Stacks")
                 .toolbar {
                     ToolbarItem {
                         Button("Snapshot Current Layout") {
                             let windows = WindowEngine.snapshot()
-                            let newProfile = Profile(name: "New Profile", windows: windows, terminalCommands: [], browserURLs: [])
-                            profileManager.addProfile(newProfile)
+                            let newStack = Stack(name: "New Stack", windows: windows, terminalCommands: [], browserURLs: [])
+                            stackManager.addStack(newStack)
                         }
                     }
                 }
 
-                Text("Select a profile to view details.")
+                Text("Select a stack to view details.")
             }
         }
         .frame(minWidth: 600, minHeight: 400)
@@ -52,26 +52,26 @@ struct SettingsView: View {
     }
 }
 
-struct ProfileDetailView: View {
-    @State var profile: Profile
-    @ObservedObject var manager: ProfileManager
+struct StackDetailView: View {
+    @State var stack: Stack
+    @ObservedObject var manager: StackManager
 
     var body: some View {
         Form {
-            Section(header: Text("Profile Info")) {
-                TextField("Profile Name", text: $profile.name)
-                    .onChange(of: profile.name) { _ in
-                        manager.updateProfile(profile)
+            Section(header: Text("Stack Info")) {
+                TextField("Stack Name", text: $stack.name)
+                    .onChange(of: stack.name) { _ in
+                        manager.updateStack(stack)
                     }
                     .font(.title)
             }
             
             Section(header: Text("Windows Saved")) {
-                if profile.windows.isEmpty {
-                    Text("No windows in this profile")
+                if stack.windows.isEmpty {
+                    Text("No windows in this stack")
                         .foregroundColor(.secondary)
                 } else {
-                    List(profile.windows) { window in
+                    List(stack.windows) { window in
                         VStack(alignment: .leading) {
                             Text(window.appName).font(.headline)
                             Text(window.bundleIdentifier).font(.caption).foregroundColor(.secondary)
@@ -82,11 +82,11 @@ struct ProfileDetailView: View {
             }
             
             Section(header: Text("Terminal Commands")) {
-                if profile.terminalCommands.isEmpty {
+                if stack.terminalCommands.isEmpty {
                     Text("No terminal commands")
                         .foregroundColor(.secondary)
                 } else {
-                    List(profile.terminalCommands) { cmd in
+                    List(stack.terminalCommands) { cmd in
                         VStack(alignment: .leading) {
                             Text(cmd.target.rawValue).font(.headline)
                             Text(cmd.command).font(.system(.caption, design: .monospaced))
@@ -96,19 +96,19 @@ struct ProfileDetailView: View {
             }
             
             Section(header: Text("Browser URLs")) {
-                if profile.browserURLs.isEmpty {
+                if stack.browserURLs.isEmpty {
                     Text("No URLs")
                         .foregroundColor(.secondary)
                 } else {
-                    List(profile.browserURLs, id: \.self) { urlString in
+                    List(stack.browserURLs, id: \.self) { urlString in
                         Text(urlString).font(.system(.caption, design: .monospaced))
                     }
                 }
             }
 
             Section {
-                Button("Delete Profile") {
-                    manager.deleteProfile(profile)
+                Button("Delete Stack") {
+                    manager.deleteStack(stack)
                 }
                 .foregroundColor(.red)
             }

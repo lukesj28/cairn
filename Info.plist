@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.lucassanjuan.LayoutManager</string>
+    <string>com.lucassanjuan.Cairn</string>
     <key>CFBundleName</key>
-    <string>LayoutManager</string>
+    <string>Cairn</string>
     <key>CFBundleExecutable</key>
-    <string>LayoutManager</string>
+    <string>Cairn</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -19,8 +19,8 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSAccessibilityUsageDescription</key>
-    <string>LayoutManager needs accessibility access to snapshot and arrange your windows.</string>
+    <string>Cairn needs accessibility access to snapshot and arrange your windows.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>LayoutManager needs AppleEvents access to execute terminal scripts.</string>
+    <string>Cairn needs AppleEvents access to execute terminal scripts.</string>
 </dict>
 </plist>

@@ -1,5 +1,5 @@
-APP_NAME = LayoutManager
-BUNDLE_ID = com.lucassanjuan.LayoutManager
+APP_NAME = Cairn
+BUNDLE_ID = com.lucassanjuan.Cairn
 SOURCES = $(wildcard Sources/*.swift)
 SWIFTC = swiftc
 SWIFTC_FLAGS = -sdk $$(xcrun --show-sdk-path --sdk macosx) -target arm64-apple-macos12.0 -parse-as-library
