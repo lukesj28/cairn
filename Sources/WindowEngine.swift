@@ -1,7 +1,7 @@
 import Cocoa
 import ApplicationServices
 
-class WindowEngine {
+enum WindowEngine {
     static func isTrusted(promptIfNeeded: Bool = true) -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: promptIfNeeded] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
@@ -39,23 +39,8 @@ class WindowEngine {
             for window in windows {
                 guard isStandardWindow(window) else { continue }
 
-                var posValue: CFTypeRef?
-                var sizeValue: CFTypeRef?
-
-                guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &posValue) == .success,
-                      AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeValue) == .success,
-                      CFGetTypeID(posValue as CFTypeRef) == AXValueGetTypeID(),
-                      CFGetTypeID(sizeValue as CFTypeRef) == AXValueGetTypeID() else { continue }
-
-                var position = CGPoint.zero
-                var size = CGSize.zero
-
-                guard AXValueGetValue(posValue as! AXValue, .cgPoint, &position),
-                      AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else { continue }
-
-                let frame = CGRect(origin: position, size: size)
+                guard let frame = axFrame(of: window), frame.width > 1, frame.height > 1 else { continue }
                 let center = CGPoint(x: frame.midX, y: frame.midY)
-                guard frame.width > 1, frame.height > 1 else { continue }
 
                 var matchedIndex = visible.firstIndex(where: { $0.contains(center) })
                 if matchedIndex == nil {
@@ -82,7 +67,7 @@ class WindowEngine {
         return snapshots
     }
 
-    static func restore(stack: Stack, owningScreen: NSScreen? = nil) {
+    static func open(stack: Stack, owningScreen: NSScreen? = nil) {
         guard isTrusted() else { return }
         let workspace = NSWorkspace.shared
         let visible = ScreenGeometry.axVisibleFrames(owning: owningScreen)
@@ -197,20 +182,20 @@ class WindowEngine {
     private static func setWindowFrame(_ window: AXUIElement, to target: CGRect, on screen: CGRect, request: CGSize) {
         var isFullScreen: CFTypeRef?
         if AXUIElementCopyAttributeValue(window, "AXFullScreen" as CFString, &isFullScreen) == .success,
-           let fs = isFullScreen as? Bool, fs {
+           let fullScreen = isFullScreen as? Bool, fullScreen {
             AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, false as CFTypeRef)
             Thread.sleep(forTimeInterval: 0.15)
         }
 
         var isZoomed: CFTypeRef?
         if AXUIElementCopyAttributeValue(window, "AXZoomed" as CFString, &isZoomed) == .success,
-           let z = isZoomed as? Bool, z {
+           let zoomed = isZoomed as? Bool, zoomed {
             AXUIElementSetAttributeValue(window, "AXZoomed" as CFString, false as CFTypeRef)
         }
 
         var isMinimized: CFTypeRef?
         if AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &isMinimized) == .success,
-           let min = isMinimized as? Bool, min {
+           let minimized = isMinimized as? Bool, minimized {
             AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, false as CFTypeRef)
         }
 
@@ -324,12 +309,12 @@ class WindowEngine {
         var sizeValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &posValue) == .success,
               AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeValue) == .success,
-              CFGetTypeID(posValue as CFTypeRef) == AXValueGetTypeID(),
-              CFGetTypeID(sizeValue as CFTypeRef) == AXValueGetTypeID() else { return nil }
-        var position = CGPoint.zero
-        var size = CGSize.zero
-        guard AXValueGetValue(posValue as! AXValue, .cgPoint, &position),
-              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else { return nil }
-        return CGRect(origin: position, size: size)
+              let position = posValue, CFGetTypeID(position) == AXValueGetTypeID(),
+              let size = sizeValue, CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
+        var origin = CGPoint.zero
+        var extent = CGSize.zero
+        guard AXValueGetValue(position as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
+        return CGRect(origin: origin, size: extent)
     }
 }

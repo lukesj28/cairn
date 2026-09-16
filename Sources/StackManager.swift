@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-class StackManager: ObservableObject {
+final class StackManager: ObservableObject {
     @Published var stacks: [Stack] = []
     private let fileManager = FileManager.default
     private let stacksURL: URL
@@ -11,25 +11,30 @@ class StackManager: ObservableObject {
         let appSupportURL = paths[0].appendingPathComponent("Cairn")
         self.stacksURL = appSupportURL.appendingPathComponent("stacks.json")
 
-        try? fileManager.createDirectory(at: appSupportURL, withIntermediateDirectories: true, attributes: nil)
+        do {
+            try fileManager.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
+        } catch {
+            NSLog("Cairn: cannot create \(appSupportURL.path): \(error.localizedDescription)")
+        }
         loadStacks()
     }
 
     func loadStacks() {
-        guard let data = try? Data(contentsOf: stacksURL) else { return }
-        let decoder = JSONDecoder()
-        if let loaded = try? decoder.decode([Stack].self, from: data) {
-            DispatchQueue.main.async {
-                self.stacks = loaded
-            }
+        guard fileManager.fileExists(atPath: stacksURL.path) else { return }
+        do {
+            stacks = try JSONDecoder().decode([Stack].self, from: Data(contentsOf: stacksURL))
+        } catch {
+            NSLog("Cairn: cannot read \(stacksURL.path): \(error.localizedDescription)")
         }
     }
 
-    func saveStacks() {
+    private func saveStacks() {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        if let data = try? encoder.encode(stacks) {
-            try? data.write(to: stacksURL)
+        do {
+            try encoder.encode(stacks).write(to: stacksURL, options: .atomic)
+        } catch {
+            NSLog("Cairn: cannot write \(stacksURL.path): \(error.localizedDescription)")
         }
     }
 

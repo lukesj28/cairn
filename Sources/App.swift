@@ -3,10 +3,10 @@ import SwiftUI
 import Combine
 
 @main
-class AppDelegate: NSObject, NSApplicationDelegate {
-    var statusItem: NSStatusItem!
-    var stackManager = StackManager()
-    var settingsWindow: NSWindow?
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem!
+    private let stackManager = StackManager()
+    private var settingsWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
 
     static func main() {
@@ -32,7 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
     }
 
-    func buildMenu() {
+    private func buildMenu() {
         let menu = NSMenu()
         
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings), keyEquivalent: ",")
@@ -42,7 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
 
         for stack in stackManager.stacks {
-            let item = NSMenuItem(title: "Restore: \(stack.name)", action: #selector(restoreStack(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: stack.name, action: #selector(openStack(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = stack
             menu.addItem(item)
@@ -56,7 +56,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc func showSettings() {
+    @objc private func showSettings() {
         if settingsWindow == nil {
             let view = SettingsView(stackManager: stackManager)
             let hostingController = NSHostingController(rootView: view)
@@ -73,10 +73,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    @objc func restoreStack(_ sender: NSMenuItem) {
+    @objc private func openStack(_ sender: NSMenuItem) {
         if let stack = sender.representedObject as? Stack {
             let owning = ScreenGeometry.owningScreen()
-            WindowEngine.restore(stack: stack, owningScreen: owning)
+            WindowEngine.open(stack: stack, owningScreen: owning)
         }
     }
 }

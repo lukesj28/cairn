@@ -19,35 +19,42 @@ enum ScreenGeometry {
         (NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.screens.first)?.frame.maxY ?? 0
     }
 
-    static func axVisibleFrame(of screen: NSScreen) -> CGRect {
+    private static func menuBarRects() -> [CGRect] {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return list.compactMap { window in
+            guard window[kCGWindowLayer as String] as? Int == 24,
+                  window[kCGWindowName as String] as? String == "Menubar",
+                  let bounds = window[kCGWindowBounds as String] as? [String: Any] else { return nil }
+            return CGRect(x: bounds["X"] as? CGFloat ?? 0,
+                          y: bounds["Y"] as? CGFloat ?? 0,
+                          width: bounds["Width"] as? CGFloat ?? 0,
+                          height: bounds["Height"] as? CGFloat ?? 0)
+        }
+    }
+
+    private static func axVisibleFrame(of screen: NSScreen, menuBars: [CGRect]) -> CGRect {
         let vf = screen.visibleFrame
         var axRect = CGRect(x: vf.minX, y: axTop - vf.maxY, width: vf.width, height: vf.height)
 
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        for w in list {
-            let layer = w[kCGWindowLayer as String] as? Int ?? 0
-            let name = w[kCGWindowName as String] as? String ?? ""
-            if layer == 24, name == "Menubar", let b = w[kCGWindowBounds as String] as? [String: Any] {
-                let mbX = b["X"] as? CGFloat ?? 0
-                let mbY = b["Y"] as? CGFloat ?? 0
-                let mbW = b["Width"] as? CGFloat ?? 0
-                let mbH = b["Height"] as? CGFloat ?? 0
-                let mbRect = CGRect(x: mbX, y: mbY, width: mbW, height: mbH)
-
-                if mbRect.intersects(CGRect(x: axRect.minX, y: axRect.minY, width: axRect.width, height: mbH + 5)) {
-                    let diff = mbRect.maxY - axRect.minY
-                    if diff > 0 && diff < 100 {
-                        axRect.origin.y += diff
-                        axRect.size.height -= diff
-                    }
-                }
+        for menuBar in menuBars {
+            let strip = CGRect(x: axRect.minX, y: axRect.minY, width: axRect.width, height: menuBar.height + 5)
+            guard menuBar.intersects(strip) else { continue }
+            let overlap = menuBar.maxY - axRect.minY
+            if overlap > 0 && overlap < 100 {
+                axRect.origin.y += overlap
+                axRect.size.height -= overlap
             }
         }
         return axRect
     }
 
+    static func axVisibleFrame(of screen: NSScreen) -> CGRect {
+        axVisibleFrame(of: screen, menuBars: menuBarRects())
+    }
+
     static func axVisibleFrames(owning: NSScreen? = nil) -> [CGRect] {
-        orderedScreens(owning: owning).map(axVisibleFrame(of:))
+        let menuBars = menuBarRects()
+        return orderedScreens(owning: owning).map { axVisibleFrame(of: $0, menuBars: menuBars) }
     }
 
     static func axVisibleFrame(ofScreen index: Int, owning: NSScreen? = nil) -> CGRect? {
