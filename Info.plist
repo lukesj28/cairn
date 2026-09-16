@@ -20,7 +20,5 @@
     <true/>
     <key>NSAccessibilityUsageDescription</key>
     <string>Cairn needs accessibility access to snapshot and arrange your windows.</string>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>Cairn needs AppleEvents access to execute terminal scripts.</string>
 </dict>
 </plist>

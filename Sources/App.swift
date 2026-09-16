@@ -24,7 +24,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         buildMenu()
 
-        // Rebuild menu when stacks change
         stackManager.$stacks
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -39,12 +38,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        let snapshotItem = NSMenuItem(title: "Snapshot Current Layout", action: #selector(snapshotLayout), keyEquivalent: "s")
-        snapshotItem.target = self
-        menu.addItem(snapshotItem)
         
         menu.addItem(NSMenuItem.separator())
 
@@ -80,26 +73,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    @objc func snapshotLayout() {
-        let windows = WindowEngine.snapshot()
-        let name = "Snapshot \(Date().formatted(date: .abbreviated, time: .shortened))"
-        let newStack = Stack(name: name, windows: windows, terminalCommands: [], browserURLs: [])
-        stackManager.addStack(newStack)
-    }
-
     @objc func restoreStack(_ sender: NSMenuItem) {
         if let stack = sender.representedObject as? Stack {
             WindowEngine.restore(stack: stack)
-
-            // Execute terminal commands
-            TerminalAdapter.execute(commands: stack.terminalCommands)
-
-            // Launch browsers
-            for urlString in stack.browserURLs {
-                if let url = URL(string: urlString) {
-                    NSWorkspace.shared.open(url)
-                }
-            }
         }
     }
 }
