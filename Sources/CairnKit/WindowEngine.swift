@@ -2,6 +2,8 @@ import Cocoa
 import ApplicationServices
 
 public enum WindowEngine {
+    private static let placementQueue = DispatchQueue(label: "com.lucassanjuan.Cairn.placement")
+
     public static func isTrusted(promptIfNeeded: Bool = true) -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: promptIfNeeded] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
@@ -16,21 +18,41 @@ public enum WindowEngine {
         return false
     }
 
-    public static func snapshot(screens: Int = 1, owningScreen: NSScreen? = nil) -> [WindowSnapshot] {
-        guard isTrusted() else { return [] }
-        var snapshots: [WindowSnapshot] = []
-        let workspace = NSWorkspace.shared
-        let visible = Array(ScreenGeometry.axVisibleFrames(owning: owningScreen).prefix(max(1, screens)))
-
-        for app in workspace.runningApplications {
+    private static func processIDs(for bundleIDs: Set<String>) -> [String: pid_t] {
+        var result: [String: pid_t] = [:]
+        for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular,
                   let bundleId = app.bundleIdentifier,
-                  let appName = app.localizedName else {
-                continue
-            }
+                  bundleIDs.contains(bundleId),
+                  result[bundleId] == nil else { continue }
+            result[bundleId] = app.processIdentifier
+        }
+        return result
+    }
 
-            let pid = app.processIdentifier
-            let axApp = AXUIElementCreateApplication(pid)
+    public static func snapshot(screens: Int = 1,
+                                owningScreen: NSScreen? = nil,
+                                completion: @escaping ([WindowSnapshot]) -> Void) {
+        guard isTrusted() else { completion([]); return }
+        let visible = Array(ScreenGeometry.axVisibleFrames(owning: owningScreen).prefix(max(1, screens)))
+        let apps: [(pid: pid_t, bundleID: String, name: String)] = NSWorkspace.shared.runningApplications.compactMap { app in
+            guard app.activationPolicy == .regular,
+                  let bundleId = app.bundleIdentifier,
+                  let appName = app.localizedName else { return nil }
+            return (app.processIdentifier, bundleId, appName)
+        }
+
+        placementQueue.async {
+            let result = scan(apps: apps, visible: visible)
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+
+    private static func scan(apps: [(pid: pid_t, bundleID: String, name: String)], visible: [CGRect]) -> [WindowSnapshot] {
+        var snapshots: [WindowSnapshot] = []
+
+        for app in apps {
+            let axApp = AXUIElementCreateApplication(app.pid)
             var value: CFTypeRef?
 
             guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value) == .success,
@@ -58,8 +80,8 @@ public enum WindowEngine {
                 }
                 guard let index = matchedIndex else { continue }
 
-                snapshots.append(WindowSnapshot(appName: appName,
-                                                bundleIdentifier: bundleId,
+                snapshots.append(WindowSnapshot(appName: app.name,
+                                                bundleIdentifier: app.bundleID,
                                                 rect: ScreenGeometry.fraction(ofAX: frame, in: visible[index]),
                                                 screen: index))
             }
@@ -89,15 +111,16 @@ public enum WindowEngine {
             }
         }
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        placementQueue.async {
             var pending = targets
             var placements: [Placement] = []
             for _ in 0..<15 {
                 Thread.sleep(forTimeInterval: 0.5)
-                DispatchQueue.main.sync {
-                    pending = applyWindowFrames(targets: pending, screens: visible, placements: &placements)
-                    correctPlacements(&placements)
-                }
+                let bundleIDs = Set(pending.map { $0.bundleIdentifier })
+                    .union(placements.isEmpty ? [] : Set(targets.map { $0.bundleIdentifier }))
+                let pids = DispatchQueue.main.sync { processIDs(for: bundleIDs) }
+                pending = applyWindowFrames(targets: pending, screens: visible, pids: pids, placements: &placements)
+                correctPlacements(&placements)
                 if pending.isEmpty && placements.allSatisfy({ $0.settled || $0.attempts >= 5 }) { break }
             }
         }
@@ -114,18 +137,17 @@ public enum WindowEngine {
 
     private static func applyWindowFrames(targets: [WindowSnapshot],
                                           screens: [CGRect],
+                                          pids: [String: pid_t],
                                           placements: inout [Placement]) -> [WindowSnapshot] {
         var pending: [WindowSnapshot] = []
 
         for (bundleId, appTargets) in Dictionary(grouping: targets, by: { $0.bundleIdentifier }) {
-            guard let app = NSWorkspace.shared.runningApplications.first(where: {
-                $0.activationPolicy == .regular && $0.bundleIdentifier == bundleId
-            }) else {
+            guard let pid = pids[bundleId] else {
                 pending.append(contentsOf: appTargets)
                 continue
             }
 
-            let axApp = AXUIElementCreateApplication(app.processIdentifier)
+            let axApp = AXUIElementCreateApplication(pid)
             var value: CFTypeRef?
             guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value) == .success,
                   let windows = value as? [AXUIElement] else {
