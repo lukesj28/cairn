@@ -1,3 +1,4 @@
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
@@ -11,6 +12,9 @@ let package = Package(
         .executableTarget(
             name: "Cairn",
             dependencies: ["CairnKit"],
+            resources: [
+                .process("Resources")
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

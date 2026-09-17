@@ -18,9 +18,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let appIcon = NSImage(named: "AppIcon") ?? Bundle.module.image(forResource: "AppIcon") {
+            NSApp.applicationIconImage = appIcon
+        }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: "Cairn")
+            button.image = loadMenuBarIcon()
         }
 
         buildMenu()
@@ -80,4 +84,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             WindowEngine.open(stack: stack, owningScreen: owning)
         }
     }
+
+    private func loadMenuBarIcon() -> NSImage? {
+        let image: NSImage?
+        if let named = NSImage(named: "MenuBarIcon") {
+            image = named
+        } else if let bundleImage = Bundle.module.image(forResource: "MenuBarIcon") {
+            image = bundleImage
+        } else if let url = Bundle.module.url(forResource: "cairn-icon", withExtension: "png", subdirectory: "Assets.xcassets/MenuBarIcon.imageset") ??
+                            Bundle.module.url(forResource: "cairn-icon", withExtension: "png"),
+                  let fileImage = NSImage(contentsOf: url) {
+            image = fileImage
+        } else {
+            image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: "Cairn")
+        }
+        image?.size = NSSize(width: 22, height: 22)
+        image?.isTemplate = true
+        image?.accessibilityDescription = "Cairn"
+        return image
+    }
 }
+
