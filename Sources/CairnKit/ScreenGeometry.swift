@@ -1,7 +1,7 @@
 import AppKit
 
-enum ScreenGeometry {
-    static func owningScreen() -> NSScreen? {
+public enum ScreenGeometry {
+    public static func owningScreen() -> NSScreen? {
         let mouseLoc = NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) {
             return screen
@@ -66,14 +66,17 @@ enum ScreenGeometry {
         axVisibleFrame(ofScreen: 0) ?? CGRect(x: 0, y: 0, width: 1512, height: 982)
     }
 
-    static func aspectRatio(ofScreen index: Int, owning: NSScreen? = nil) -> CGFloat {
+    public static func aspectRatio(ofScreen index: Int, owning: NSScreen? = nil) -> CGFloat {
         let r = axVisibleFrame(ofScreen: index, owning: owning) ?? activeVisibleFrame
         return r.height > 0 ? r.width / r.height : 16.0 / 9.0
     }
 
     static let minFraction: CGFloat = 0.05
 
-    static func clamp(_ r: CGRect) -> CGRect {
+    public static func clamp(_ r: CGRect) -> CGRect {
+        guard r.minX.isFinite, r.minY.isFinite, r.width.isFinite, r.height.isFinite else {
+            return CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+        }
         let w = min(1, max(minFraction, r.width))
         let h = min(1, max(minFraction, r.height))
         return CGRect(x: min(max(0, r.minX), 1 - w),
@@ -96,7 +99,7 @@ enum ScreenGeometry {
                height: r.height * visible.height)
     }
 
-    static func drop(_ box: CGRect, from index: Int, canvases: [Int: CGRect]) -> (screen: Int, rect: CGRect)? {
+    public static func drop(_ box: CGRect, from index: Int, canvases: [Int: CGRect]) -> (screen: Int, rect: CGRect)? {
         guard let source = canvases[index] else { return nil }
         let global = box.offsetBy(dx: source.minX, dy: source.minY)
         let centre = CGPoint(x: global.midX, y: global.midY)

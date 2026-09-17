@@ -1,8 +1,8 @@
 import Cocoa
 import ApplicationServices
 
-enum WindowEngine {
-    static func isTrusted(promptIfNeeded: Bool = true) -> Bool {
+public enum WindowEngine {
+    public static func isTrusted(promptIfNeeded: Bool = true) -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: promptIfNeeded] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }
@@ -16,7 +16,7 @@ enum WindowEngine {
         return false
     }
 
-    static func snapshot(screens: Int = 1, owningScreen: NSScreen? = nil) -> [WindowSnapshot] {
+    public static func snapshot(screens: Int = 1, owningScreen: NSScreen? = nil) -> [WindowSnapshot] {
         guard isTrusted() else { return [] }
         var snapshots: [WindowSnapshot] = []
         let workspace = NSWorkspace.shared
@@ -67,20 +67,16 @@ enum WindowEngine {
         return snapshots
     }
 
-    static func open(stack: Stack, owningScreen: NSScreen? = nil) {
+    public static func open(stack: Stack, owningScreen: NSScreen? = nil) {
         guard isTrusted() else { return }
         let workspace = NSWorkspace.shared
         let visible = ScreenGeometry.axVisibleFrames(owning: owningScreen)
         guard !visible.isEmpty else { return }
 
-        let targets = stack.windows.map { target -> WindowSnapshot in
-            if target.screen < visible.count {
-                return target
-            } else {
-                var clamped = target
-                clamped.screen = max(0, visible.count - 1)
-                return clamped
-            }
+        let targets = stack.windows.map { window -> WindowSnapshot in
+            var target = window
+            target.screen = screenIndex(for: window, screenCount: visible.count)
+            return target
         }
         guard !targets.isEmpty else { return }
 
@@ -152,8 +148,8 @@ enum WindowEngine {
             }
 
             for target in appTargets {
-                let targetScreenIndex = min(target.screen, screens.count - 1)
-                guard targetScreenIndex >= 0 else {
+                let targetScreenIndex = screenIndex(for: target, screenCount: screens.count)
+                guard screens.indices.contains(targetScreenIndex) else {
                     pending.append(target)
                     continue
                 }
@@ -211,35 +207,21 @@ enum WindowEngine {
 
     private static func correctPlacements(_ placements: inout [Placement]) {
         for i in placements.indices where !placements[i].settled && placements[i].attempts < 5 {
-            let target = placements[i].target
-            let screen = placements[i].screen
             guard let actual = axFrame(of: placements[i].window) else { continue }
-
-            let overWidth = actual.width - target.width
-            let overHeight = actual.height - target.height
-            let wanted = anchor(target: target, size: actual.size, screen: screen)
-
-            if abs(overWidth) <= 1 && abs(overHeight) <= 1
-                && abs(actual.minX - wanted.x) <= 1 && abs(actual.minY - wanted.y) <= 1 {
+            let outcome = negotiate(target: placements[i].target,
+                                    actual: actual,
+                                    request: placements[i].request,
+                                    screen: placements[i].screen)
+            if outcome.settled {
                 placements[i].settled = true
                 continue
             }
-
-            var request = placements[i].request
-            if overWidth > 1 {
-                request.width = max(1, request.width - overWidth)
-            } else if overWidth < -1 {
-                request.width = target.width
-            }
-            if overHeight > 1 {
-                request.height = max(1, request.height - overHeight)
-            } else if overHeight < -1 {
-                request.height = target.height
-            }
-
-            placements[i].request = request
+            placements[i].request = outcome.request
             placements[i].attempts += 1
-            setWindowFrame(placements[i].window, to: target, on: screen, request: request)
+            setWindowFrame(placements[i].window,
+                           to: placements[i].target,
+                           on: placements[i].screen,
+                           request: outcome.request)
         }
     }
 
@@ -259,7 +241,7 @@ enum WindowEngine {
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posValue)
     }
 
-    private static func anchor(target: CGRect, size: CGSize, screen: CGRect) -> CGPoint {
+    static func anchor(target: CGRect, size: CGSize, screen: CGRect) -> CGPoint {
         let tolerance: CGFloat = 4
         var x = target.midX - size.width / 2
         if target.minX - screen.minX <= tolerance {
@@ -273,13 +255,49 @@ enum WindowEngine {
         } else if screen.maxY - target.maxY <= tolerance {
             y = screen.maxY - size.height
         }
-        if size.width <= screen.width {
+        if size.width > screen.width {
+            x = screen.minX
+        } else {
             x = min(max(x, screen.minX), screen.maxX - size.width)
         }
-        if size.height <= screen.height {
+        if size.height > screen.height {
+            y = screen.minY
+        } else {
             y = min(max(y, screen.minY), screen.maxY - size.height)
         }
         return CGPoint(x: x.rounded(), y: y.rounded())
+    }
+
+    static func screenIndex(for window: WindowSnapshot, screenCount: Int) -> Int {
+        guard screenCount > 0 else { return 0 }
+        return min(max(0, window.screen), screenCount - 1)
+    }
+
+    static func negotiate(target: CGRect,
+                          actual: CGRect,
+                          request: CGSize,
+                          screen: CGRect) -> (settled: Bool, request: CGSize) {
+        let overWidth = actual.width - target.width
+        let overHeight = actual.height - target.height
+        let wanted = anchor(target: target, size: actual.size, screen: screen)
+
+        if abs(overWidth) <= 1 && abs(overHeight) <= 1
+            && abs(actual.minX - wanted.x) <= 1 && abs(actual.minY - wanted.y) <= 1 {
+            return (true, request)
+        }
+
+        var next = request
+        if overWidth > 1 {
+            next.width = max(1, request.width - overWidth)
+        } else if overWidth < -1 {
+            next.width = target.width
+        }
+        if overHeight > 1 {
+            next.height = max(1, request.height - overHeight)
+        } else if overHeight < -1 {
+            next.height = target.height
+        }
+        return (false, next)
     }
 
     private static func claim(_ free: inout [AXUIElement], for targetFrame: CGRect, on screen: CGRect) -> AXUIElement? {

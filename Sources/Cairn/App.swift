@@ -1,6 +1,7 @@
 import Cocoa
 import SwiftUI
 import Combine
+import CairnKit
 
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {

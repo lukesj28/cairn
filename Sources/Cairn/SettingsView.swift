@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import CairnKit
 
 struct SettingsView: View {
     @ObservedObject var stackManager: StackManager
