@@ -18,14 +18,22 @@ public enum WindowEngine {
         return false
     }
 
-    private static func processIDs(for bundleIDs: Set<String>) -> [String: pid_t] {
-        var result: [String: pid_t] = [:]
+    private static func runOnMain<T>(_ block: () -> T) -> T {
+        if Thread.isMainThread {
+            return block()
+        } else {
+            return DispatchQueue.main.sync(execute: block)
+        }
+    }
+
+    private static func processInfos(for bundleIDs: Set<String>) -> [String: (pid: pid_t, isFinishedLaunching: Bool)] {
+        var result: [String: (pid: pid_t, isFinishedLaunching: Bool)] = [:]
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular,
                   let bundleId = app.bundleIdentifier,
                   bundleIDs.contains(bundleId),
                   result[bundleId] == nil else { continue }
-            result[bundleId] = app.processIdentifier
+            result[bundleId] = (app.processIdentifier, app.isFinishedLaunching)
         }
         return result
     }
@@ -102,6 +110,14 @@ public enum WindowEngine {
         }
         guard !targets.isEmpty else { return }
 
+        let totalDesired = Dictionary(grouping: targets, by: { $0.bundleIdentifier }).mapValues { $0.count }
+        let runningBundleIDs = runOnMain {
+            Set(workspace.runningApplications.compactMap {
+                $0.activationPolicy == .regular ? $0.bundleIdentifier : nil
+            })
+        }
+        let coldLaunchedBundleIDs = Set(targets.map { $0.bundleIdentifier }).subtracting(runningBundleIDs)
+
         for bundleId in Set(targets.map { $0.bundleIdentifier }) {
             let config = NSWorkspace.OpenConfiguration()
             config.activates = true
@@ -114,11 +130,24 @@ public enum WindowEngine {
         placementQueue.async {
             var pending = targets
             var placements: [Placement] = []
-            for _ in 0..<15 {
+            var inFlightNewWindows: [String: Int] = [:]
+            var newWindowAttempts: [String: Int] = [:]
+
+            for iteration in 0..<15 {
                 Thread.sleep(forTimeInterval: 0.5)
                 let bundleIDs = Set(pending.map { $0.bundleIdentifier })
                     .union(placements.isEmpty ? [] : Set(targets.map { $0.bundleIdentifier }))
-                let pids = DispatchQueue.main.sync { processIDs(for: bundleIDs) }
+                let appProcesses = runOnMain { processInfos(for: bundleIDs) }
+
+                ensureWindows(for: bundleIDs,
+                              processes: appProcesses,
+                              totalDesired: totalDesired,
+                              coldLaunched: coldLaunchedBundleIDs,
+                              iteration: iteration,
+                              inFlight: &inFlightNewWindows,
+                              attempts: &newWindowAttempts)
+
+                let pids = appProcesses.mapValues { $0.pid }
                 pending = applyWindowFrames(targets: pending, screens: visible, pids: pids, placements: &placements)
                 correctPlacements(&placements)
                 if pending.isEmpty && placements.allSatisfy({ $0.settled || $0.attempts >= 5 }) { break }
@@ -356,5 +385,198 @@ public enum WindowEngine {
         guard AXValueGetValue(position as! AXValue, .cgPoint, &origin),
               AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
         return CGRect(origin: origin, size: extent)
+    }
+
+    static func neededWindowCount(desired: Int, current: Int, inFlight: Int) -> Int {
+        let missing = max(0, desired - current)
+        let effectiveInFlight = min(inFlight, missing)
+        return max(0, missing - effectiveInFlight)
+    }
+
+    static func shouldWaitForColdLaunch(isColdLaunched: Bool, standardCount: Int, iteration: Int) -> Bool {
+        isColdLaunched && standardCount == 0 && iteration < 2
+    }
+
+    private static func ensureWindows(for bundleIDs: Set<String>,
+                                      processes: [String: (pid: pid_t, isFinishedLaunching: Bool)],
+                                      totalDesired: [String: Int],
+                                      coldLaunched: Set<String>,
+                                      iteration: Int,
+                                      inFlight: inout [String: Int],
+                                      attempts: inout [String: Int]) {
+        for bundleId in bundleIDs {
+            guard let proc = processes[bundleId],
+                  let desiredCount = totalDesired[bundleId],
+                  desiredCount > 0 else { continue }
+
+            guard proc.isFinishedLaunching else { continue }
+
+            let axApp = AXUIElementCreateApplication(proc.pid)
+            var value: CFTypeRef?
+            let standardCount: Int
+            if AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value) == .success,
+               let windows = value as? [AXUIElement] {
+                standardCount = windows.filter { isStandardWindow($0) }.count
+            } else {
+                standardCount = 0
+            }
+
+            if shouldWaitForColdLaunch(isColdLaunched: coldLaunched.contains(bundleId),
+                                       standardCount: standardCount,
+                                       iteration: iteration) {
+                continue
+            }
+
+            let missing = max(0, desiredCount - standardCount)
+            if missing == 0 {
+                inFlight[bundleId] = 0
+                continue
+            }
+
+            let currentInFlight = inFlight[bundleId] ?? 0
+            let needed = neededWindowCount(desired: desiredCount, current: standardCount, inFlight: currentInFlight)
+
+            if needed > 0 {
+                let currentAttempts = attempts[bundleId] ?? 0
+                guard currentAttempts < 3 else { continue }
+                attempts[bundleId] = currentAttempts + 1
+                inFlight[bundleId] = min(currentInFlight, missing) + needed
+
+                for _ in 0..<needed {
+                    triggerNewWindow(for: proc.pid)
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+            } else {
+                inFlight[bundleId] = min(currentInFlight, missing)
+            }
+        }
+    }
+
+    @discardableResult
+    public static func triggerNewWindow(for pid: pid_t) -> Bool {
+        let axApp = AXUIElementCreateApplication(pid)
+        if let item = findNewWindowMenuItem(in: axApp) {
+            let result = AXUIElementPerformAction(item, kAXPressAction as CFString)
+            if result == .success {
+                return true
+            }
+        }
+        return postCmdN(to: pid)
+    }
+
+    private struct MenuCandidate {
+        let element: AXUIElement
+        let tier: Int
+    }
+
+    private static func findNewWindowMenuItem(in axApp: AXUIElement) -> AXUIElement? {
+        var menuBarRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarRef) == .success,
+              let menuBar = menuBarRef else { return nil }
+
+        var menusRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(menuBar as! AXUIElement, kAXChildrenAttribute as CFString, &menusRef) == .success,
+              let menuBarItems = menusRef as? [AXUIElement] else { return nil }
+
+        var candidates: [MenuCandidate] = []
+
+        for (idx, mbItem) in menuBarItems.enumerated() {
+            var menuTitleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(mbItem, kAXTitleAttribute as CFString, &menuTitleRef)
+            let menuTitle = (menuTitleRef as? String) ?? ""
+
+            var submenusRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(mbItem, kAXChildrenAttribute as CFString, &submenusRef) == .success,
+                  let submenus = submenusRef as? [AXUIElement] else { continue }
+
+            for submenu in submenus {
+                findActionableCandidates(in: submenu, menuTitle: menuTitle, menuIndex: idx, depth: 0, candidates: &candidates)
+            }
+        }
+
+        candidates.sort { $0.tier < $1.tier }
+        return candidates.first?.element
+    }
+
+    private static func findActionableCandidates(in menu: AXUIElement,
+                                                menuTitle: String,
+                                                menuIndex: Int,
+                                                depth: Int,
+                                                candidates: inout [MenuCandidate]) {
+        guard depth < 3 else { return }
+        var itemsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(menu, kAXChildrenAttribute as CFString, &itemsRef) == .success,
+              let items = itemsRef as? [AXUIElement] else { return }
+
+        for item in items {
+            var subRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(item, kAXChildrenAttribute as CFString, &subRef) == .success,
+               let submenus = subRef as? [AXUIElement], !submenus.isEmpty {
+                for sub in submenus {
+                    findActionableCandidates(in: sub, menuTitle: menuTitle, menuIndex: menuIndex, depth: depth + 1, candidates: &candidates)
+                }
+                continue
+            }
+
+            var enabledRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(item, kAXEnabledAttribute as CFString, &enabledRef) == .success,
+               let enabled = enabledRef as? Bool, !enabled {
+                continue
+            }
+
+            var titleRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(item, kAXTitleAttribute as CFString, &titleRef) == .success,
+                  let rawTitle = titleRef as? String else { continue }
+            let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+
+            var cmdCharRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(item, "AXMenuItemCmdChar" as CFString, &cmdCharRef)
+            let cmdChar = (cmdCharRef as? String)?.uppercased() ?? ""
+
+            var cmdModRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(item, "AXMenuItemCmdModifiers" as CFString, &cmdModRef)
+            let cmdMod = (cmdModRef as? Int) ?? 0
+
+            let lower = title.lowercased()
+            if lower.contains("tab") || lower.contains("folder") || lower.contains("close") || lower.contains("merge") {
+                continue
+            }
+
+            let isFileMenu = menuTitle == "File" || menuTitle == "Shell" || menuIndex == 2
+
+            var tier: Int?
+            if lower == "new window" {
+                tier = 1
+            } else if lower.hasPrefix("new ") && lower.hasSuffix(" window") && !lower.contains("private") && !lower.contains("incognito") {
+                tier = 2
+            } else if lower.contains("new window") && !lower.contains("private") && !lower.contains("incognito") {
+                tier = 3
+            } else if isFileMenu && lower == "new document" {
+                tier = 4
+            } else if isFileMenu && lower == "new" && cmdChar == "N" {
+                tier = 5
+            } else if isFileMenu && cmdChar == "N" && cmdMod == 0 {
+                tier = 6
+            }
+
+            if let t = tier {
+                candidates.append(MenuCandidate(element: item, tier: t))
+            }
+        }
+    }
+
+    private static func postCmdN(to pid: pid_t) -> Bool {
+        let src = CGEventSource(stateID: .hidSystemState)
+        let keyN: CGKeyCode = 45
+        guard let keyDown = CGEvent(keyboardEventSource: src, virtualKey: keyN, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: src, virtualKey: keyN, keyDown: false) else {
+            return false
+        }
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        keyDown.postToPid(pid)
+        keyUp.postToPid(pid)
+        return true
     }
 }

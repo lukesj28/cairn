@@ -108,4 +108,38 @@ struct PlacementTests {
                                     rect: CGRect(x: 0, y: 0, width: 0.5, height: 1), screen: input.screen)
         #expect(WindowEngine.screenIndex(for: window, screenCount: input.count) == input.expected)
     }
+
+    @Test("needed window count calculates missing windows taking in-flight requests into account", arguments: [
+        (desired: 2, current: 0, inFlight: 0, expected: 2),
+        (desired: 2, current: 1, inFlight: 0, expected: 1),
+        (desired: 2, current: 1, inFlight: 1, expected: 0),
+        (desired: 2, current: 2, inFlight: 0, expected: 0),
+        (desired: 2, current: 3, inFlight: 0, expected: 0),
+        (desired: 3, current: 1, inFlight: 1, expected: 1),
+        (desired: 3, current: 0, inFlight: 2, expected: 1),
+        (desired: 1, current: 0, inFlight: 0, expected: 1),
+        (desired: 0, current: 0, inFlight: 0, expected: 0),
+    ])
+    func neededWindows(_ input: (desired: Int, current: Int, inFlight: Int, expected: Int)) {
+        let count = WindowEngine.neededWindowCount(desired: input.desired,
+                                                   current: input.current,
+                                                   inFlight: input.inFlight)
+        #expect(count == input.expected)
+    }
+
+    @Test("cold launch waiting respects cold launch state, window count, and iteration", arguments: [
+        (isColdLaunched: true, standardCount: 0, iteration: 0, expected: true),
+        (isColdLaunched: true, standardCount: 0, iteration: 1, expected: true),
+        (isColdLaunched: true, standardCount: 0, iteration: 2, expected: false),
+        (isColdLaunched: true, standardCount: 1, iteration: 0, expected: false),
+        (isColdLaunched: false, standardCount: 0, iteration: 0, expected: false),
+        (isColdLaunched: false, standardCount: 1, iteration: 0, expected: false),
+    ])
+    func coldLaunchWaiting(_ input: (isColdLaunched: Bool, standardCount: Int, iteration: Int, expected: Bool)) {
+        let wait = WindowEngine.shouldWaitForColdLaunch(isColdLaunched: input.isColdLaunched,
+                                                       standardCount: input.standardCount,
+                                                       iteration: input.iteration)
+        #expect(wait == input.expected)
+    }
 }
+

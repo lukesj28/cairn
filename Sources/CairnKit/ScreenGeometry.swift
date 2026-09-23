@@ -21,9 +21,9 @@ public enum ScreenGeometry {
 
     private static func menuBarRects() -> [CGRect] {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        let menuBarLevel = CGWindowLevelForKey(.mainMenuWindow)
         return list.compactMap { window in
-            guard window[kCGWindowLayer as String] as? Int == 24,
-                  window[kCGWindowName as String] as? String == "Menubar",
+            guard window[kCGWindowLayer as String] as? Int32 == menuBarLevel,
                   let bounds = window[kCGWindowBounds as String] as? [String: Any] else { return nil }
             return CGRect(x: bounds["X"] as? CGFloat ?? 0,
                           y: bounds["Y"] as? CGFloat ?? 0,

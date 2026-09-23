@@ -91,10 +91,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             image = named
         } else if let bundleImage = Bundle.module.image(forResource: "MenuBarIcon") {
             image = bundleImage
-        } else if let url = Bundle.module.url(forResource: "cairn-icon", withExtension: "png", subdirectory: "Assets.xcassets/MenuBarIcon.imageset") ??
-                            Bundle.module.url(forResource: "cairn-icon", withExtension: "png"),
-                  let fileImage = NSImage(contentsOf: url) {
-            image = fileImage
         } else {
             image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: "Cairn")
         }
