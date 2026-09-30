@@ -73,4 +73,13 @@ public final class StackManager: ObservableObject {
         }
         saveStacks()
     }
+
+    public func nextDefaultStackName() -> String {
+        let existingNames = Set(stacks.map(\.name))
+        var number = 1
+        while existingNames.contains("New Stack \(number)") {
+            number += 1
+        }
+        return "New Stack \(number)"
+    }
 }

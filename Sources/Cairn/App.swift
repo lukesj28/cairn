@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let snapshotItem = NSMenuItem(title: "Snapshot Current Windows as New Stack...", action: #selector(snapshotNewStack), keyEquivalent: "s")
+        let snapshotItem = NSMenuItem(title: "Snapshot to New Stack", action: #selector(snapshotNewStack), keyEquivalent: "s")
         snapshotItem.keyEquivalentModifierMask = [.command, .shift]
         snapshotItem.target = self
         menu.addItem(snapshotItem)
@@ -101,8 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func snapshotNewStack() {
         WindowEngine.snapshot(screens: 1) { [weak self] windows in
             guard let self else { return }
-            let count = self.stackManager.stacks.count + 1
-            let stack = Stack(name: "Stack \(count)", windows: windows)
+            let name = self.stackManager.nextDefaultStackName()
+            let stack = Stack(name: name, windows: windows)
             self.stackManager.addStack(stack)
             self.showSettings()
         }

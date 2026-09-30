@@ -132,11 +132,12 @@ public enum WindowEngine {
             var placements: [Placement] = []
             var inFlightNewWindows: [String: Int] = [:]
             var newWindowAttempts: [String: Int] = [:]
+            let allBundleIDs = Set(targets.map { $0.bundleIdentifier })
 
             for iteration in 0..<15 {
                 Thread.sleep(forTimeInterval: 0.5)
                 let bundleIDs = Set(pending.map { $0.bundleIdentifier })
-                    .union(placements.isEmpty ? [] : Set(targets.map { $0.bundleIdentifier }))
+                    .union(placements.isEmpty ? [] : allBundleIDs)
                 let appProcesses = runOnMain { processInfos(for: bundleIDs) }
 
                 ensureWindows(for: bundleIDs,
@@ -150,8 +151,24 @@ public enum WindowEngine {
                 let pids = appProcesses.mapValues { $0.pid }
                 pending = applyWindowFrames(targets: pending, screens: visible, pids: pids, placements: &placements)
                 correctPlacements(&placements)
+                bringToFront(placements: placements, bundleIDs: allBundleIDs)
                 if pending.isEmpty && placements.allSatisfy({ $0.settled || $0.attempts >= 5 }) { break }
             }
+        }
+    }
+
+    private static func bringToFront(placements: [Placement], bundleIDs: Set<String>) {
+        runOnMain {
+            for app in NSWorkspace.shared.runningApplications {
+                guard let bundleId = app.bundleIdentifier, bundleIDs.contains(bundleId) else { continue }
+                if app.isHidden {
+                    app.unhide()
+                }
+                app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            }
+        }
+        for placement in placements {
+            AXUIElementPerformAction(placement.window, kAXRaiseAction as CFString)
         }
     }
 
@@ -254,6 +271,8 @@ public enum WindowEngine {
                 AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posValue)
             }
         }
+
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
     }
 
     private static func correctPlacements(_ placements: inout [Placement]) {

@@ -19,6 +19,14 @@ struct CanvasLayoutTests {
         #expect(isClose(rects[1], CGRect(x: 153, y: 204, width: 294, height: 196)))
     }
 
+    @Test("two canvases have identical size even when input aspects differ")
+    func twoCanvasesHaveIdenticalSize() {
+        let rects = CanvasLayout.rects(in: CGSize(width: 600, height: 400), aspects: [1.6, 1.777], spacing: 8)
+        #expect(rects.count == 2)
+        #expect(isClose(rects[0].width, rects[1].width))
+        #expect(isClose(rects[0].height, rects[1].height))
+    }
+
     @Test("a canvas never exceeds the available width")
     func canvasNeverExceedsWidth() {
         let rects = CanvasLayout.rects(in: CGSize(width: 200, height: 1000), aspects: [1.5], spacing: 8)

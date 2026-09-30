@@ -136,4 +136,26 @@ struct StackStoreTests {
             #expect(try String(contentsOf: quarantine, encoding: .utf8) == "{ not json")
         }
     }
+
+    @Test("default stack name uses lowest available number")
+    func nextDefaultStackNameLowestAvailable() throws {
+        try withTemporaryDirectory { dir in
+            let manager = StackManager(directory: dir)
+            #expect(manager.nextDefaultStackName() == "New Stack 1")
+
+            manager.addStack(Stack(name: "New Stack 1", windows: []))
+            #expect(manager.nextDefaultStackName() == "New Stack 2")
+
+            manager.addStack(Stack(name: "New Stack 3", windows: []))
+            #expect(manager.nextDefaultStackName() == "New Stack 2")
+
+            manager.addStack(Stack(name: "New Stack 2", windows: []))
+            #expect(manager.nextDefaultStackName() == "New Stack 4")
+
+            let emptyManager = StackManager(directory: dir.appendingPathComponent("sub"))
+            emptyManager.addStack(Stack(name: "Work", windows: []))
+            emptyManager.addStack(Stack(name: "Personal", windows: []))
+            #expect(emptyManager.nextDefaultStackName() == "New Stack 1")
+        }
+    }
 }

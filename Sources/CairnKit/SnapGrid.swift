@@ -18,25 +18,51 @@ public enum SnapGrid {
     }
 
     public static func snapResize(rect: CGRect, original: CGRect, neighbours: [CGRect]) -> CGRect {
-        let x = snapResizeAxis(min: rect.minX, max: rect.maxX, originalMin: original.minX,
+        guard isFinite(rect) else { return ScreenGeometry.clamp(rect) }
+        let orig = isFinite(original) ? original : rect
+        let x = snapResizeAxis(min: rect.minX, max: rect.maxX, originalMin: orig.minX, originalMax: orig.maxX,
                                divisions: columns, targets: targets(neighbours, vertical: false))
-        let y = snapResizeAxis(min: rect.minY, max: rect.maxY, originalMin: original.minY,
+        let y = snapResizeAxis(min: rect.minY, max: rect.maxY, originalMin: orig.minY, originalMax: orig.maxY,
                                divisions: rows, targets: targets(neighbours, vertical: true))
-        return ScreenGeometry.clamp(CGRect(x: x.origin, y: y.origin, width: x.length, height: y.length))
+        return CGRect(x: x.origin, y: y.origin, width: x.length, height: y.length)
     }
 
-    private static func snapResizeAxis(min: CGFloat, max: CGFloat, originalMin: CGFloat,
+    public static func clampResize(rect: CGRect, original: CGRect) -> CGRect {
+        guard isFinite(rect) else { return ScreenGeometry.clamp(rect) }
+        let orig = isFinite(original) ? original : rect
+        let xIsLeading = abs(rect.minX - orig.minX) > 0.001
+        let yIsLeading = abs(rect.minY - orig.minY) > 0.001
+        let x = resizeAxis(edge: xIsLeading ? rect.minX : rect.maxX, isLeading: xIsLeading,
+                           originalMin: orig.minX, originalMax: orig.maxX, minLength: 1 / CGFloat(columns))
+        let y = resizeAxis(edge: yIsLeading ? rect.minY : rect.maxY, isLeading: yIsLeading,
+                           originalMin: orig.minY, originalMax: orig.maxY, minLength: 1 / CGFloat(rows))
+        return CGRect(x: x.origin, y: y.origin, width: x.length, height: y.length)
+    }
+
+    private static func snapResizeAxis(min: CGFloat, max: CGFloat, originalMin: CGFloat, originalMax: CGFloat,
                                        divisions: Int, targets: [CGFloat]) -> (origin: CGFloat, length: CGFloat) {
-        let minLength = 1 / CGFloat(divisions)
-        if abs(min - originalMin) > 0.001 {
-            let edge = magnet(min, to: targets) ?? quantise(min, divisions: divisions)
-            let length = Swift.max(minLength, max - edge)
-            return (origin: max - length, length: length)
+        let isLeading = abs(min - originalMin) > 0.001
+        let rawEdge = isLeading ? min : max
+        let edge = magnet(rawEdge, to: targets) ?? quantise(rawEdge, divisions: divisions)
+        return resizeAxis(edge: edge, isLeading: isLeading,
+                          originalMin: originalMin, originalMax: originalMax,
+                          minLength: 1 / CGFloat(divisions))
+    }
+
+    private static func resizeAxis(edge: CGFloat, isLeading: Bool,
+                                   originalMin: CGFloat, originalMax: CGFloat,
+                                   minLength: CGFloat) -> (origin: CGFloat, length: CGFloat) {
+        if isLeading {
+            let clampedEdge = Swift.max(0, Swift.min(originalMax - minLength, edge))
+            return (origin: clampedEdge, length: originalMax - clampedEdge)
         } else {
-            let edge = magnet(max, to: targets) ?? quantise(max, divisions: divisions)
-            let length = Swift.max(minLength, edge - min)
-            return (origin: min, length: length)
+            let clampedEdge = Swift.min(1.0, Swift.max(originalMin + minLength, edge))
+            return (origin: originalMin, length: clampedEdge - originalMin)
         }
+    }
+
+    private static func isFinite(_ rect: CGRect) -> Bool {
+        rect.origin.x.isFinite && rect.origin.y.isFinite && rect.size.width.isFinite && rect.size.height.isFinite
     }
 
     public static func quantise(_ value: CGFloat, divisions: Int) -> CGFloat {

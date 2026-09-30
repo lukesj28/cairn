@@ -9,14 +9,16 @@ public enum CanvasLayout {
             return []
         }
 
-        let inverseSum = aspects.reduce(0) { $0 + 1 / $1 }
-        let usableHeight = size.height - spacing * CGFloat(aspects.count - 1)
+        let primaryAspect = aspects[0]
+        let inverseSum = CGFloat(aspects.count) / primaryAspect
+        let totalSpacing = spacing * CGFloat(aspects.count - 1)
+        let usableHeight = max(0, size.height - totalSpacing)
         let width = max(0, min(size.width, usableHeight / inverseSum))
+        let height = width / primaryAspect
         let x = (size.width - width) / 2
 
         var y: CGFloat = 0
-        return aspects.map { aspect in
-            let height = width / aspect
+        return (0..<aspects.count).map { _ in
             let rect = CGRect(x: x, y: y, width: width, height: height)
             y += height + spacing
             return rect

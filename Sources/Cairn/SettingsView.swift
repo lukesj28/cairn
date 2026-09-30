@@ -9,7 +9,7 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebarView
-                .frame(minWidth: 190, idealWidth: 210, maxWidth: 240)
+                .frame(width: 210)
                 .background(Color(nsColor: .controlBackgroundColor))
 
             Divider()
@@ -114,24 +114,14 @@ struct SettingsView: View {
             Divider()
 
             HStack(spacing: 8) {
-                Menu {
-                    Button {
-                        addBlankStack()
-                    } label: {
-                        Label("New Blank Stack", systemImage: "plus.rectangle")
-                    }
-
-                    Button {
-                        snapshotToNewStack()
-                    } label: {
-                        Label("Snapshot Current Windows", systemImage: "camera")
-                    }
+                Button {
+                    addBlankStack()
                 } label: {
                     Image(systemName: "plus")
                 }
-                .menuStyle(.borderlessButton)
+                .buttonStyle(.borderless)
                 .frame(width: 24, height: 24)
-                .help("Add Stack")
+                .help("New Empty Stack")
 
                 Button {
                     if let id = selectedStackID, let stack = stackManager.stacks.first(where: { $0.id == id }) {
@@ -267,8 +257,8 @@ struct SettingsView: View {
     }
 
     private func createStack(windows: [WindowSnapshot]) {
-        let count = stackManager.stacks.count + 1
-        let stack = Stack(name: "Stack \(count)", windows: windows)
+        let name = stackManager.nextDefaultStackName()
+        let stack = Stack(name: name, windows: windows)
         stackManager.addStack(stack)
         selectedStackID = stack.id
     }
@@ -296,24 +286,25 @@ private struct StackRow: View {
         HStack(spacing: 10) {
             Image(systemName: stack.screens > 1 ? "display.2" : "macwindow.on.rectangle")
                 .font(.system(size: 14))
-                .foregroundColor(isSelected ? .accentColor : .secondary)
-                .frame(width: 18)
+                .foregroundColor(isSelected ? .white : .secondary)
+                .frame(width: 20, alignment: .center)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(stack.name)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
-                    .foregroundColor(.primary)
+                    .foregroundColor(isSelected ? .white : .primary)
 
                 Text(summary)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
                     .lineLimit(1)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 3)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
     }
 
     private var summary: String {

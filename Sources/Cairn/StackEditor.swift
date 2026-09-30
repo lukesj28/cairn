@@ -25,28 +25,7 @@ struct StackEditorView: View {
     var body: some View {
         Group {
             if let stack {
-                VStack(alignment: .leading, spacing: 12) {
-                    headerBar(stack)
-
-                    Divider()
-
-                    HStack(alignment: .top, spacing: 14) {
-                        CanvasColumn(aspects: aspects,
-                                     windows: stack.windows,
-                                     selection: $selection,
-                                     onCommit: place,
-                                     onRemove: removeWindow)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                        inspectorPanel(stack)
-                            .frame(width: 215)
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    footerBar(stack)
-                }
-                .padding(16)
+                editorBody(stack)
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "trash")
@@ -82,6 +61,47 @@ struct StackEditorView: View {
         } message: {
             Text("Are you sure you want to delete \"\(stack?.name ?? "this stack")\"? This action cannot be undone.")
         }
+    }
+
+    private func editorBody(_ stack: Stack) -> some View {
+        VStack(spacing: 0) {
+            headerBar(stack)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
+
+            Divider()
+
+            mainSplitView(stack)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+            footerBar(stack)
+        }
+        .background(
+            Color.black.opacity(0.0001)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selection = nil
+                }
+        )
+    }
+
+    private func mainSplitView(_ stack: Stack) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            CanvasColumn(aspects: aspects,
+                         windows: stack.windows,
+                         selection: $selection,
+                         onCommit: place,
+                         onRemove: removeWindow)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            inspectorPanel(stack)
+                .frame(width: 220)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -124,11 +144,6 @@ struct StackEditorView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "macwindow")
                     Text("\(stack.windows.count) \(stack.windows.count == 1 ? "window" : "windows")")
-
-                    Text("•")
-
-                    Image(systemName: stack.screens == 1 ? "display" : "display.2")
-                    Text(stack.screens == 1 ? "Single Display" : "Dual Displays")
                 }
                 .font(.subheadline)
                 .foregroundColor(.secondary)
@@ -160,7 +175,7 @@ struct StackEditorView: View {
                 Button {
                     addApps()
                 } label: {
-                    Label("Add App…", systemImage: "plus")
+                    Label("Add App", systemImage: "plus")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -198,34 +213,71 @@ struct StackEditorView: View {
                           onChange: updateWindow,
                           onRemove: removeSelected)
         } else {
-            StackOverviewInspector(stack: stack,
-                                   onAddApp: addApps,
-                                   onSnapshot: { snapshotLayout(stack) },
-                                   isSnapshotting: isSnapshotting)
+            StackOverviewInspector(stack: stack) { windowID in
+                selection = windowID
+            }
         }
     }
 
     private func footerBar(_ stack: Stack) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "info.circle")
-                .foregroundColor(.secondary)
-                .font(.caption)
+        VStack(spacing: 0) {
+            Divider()
 
-            Text("Drag to move · Drag any edge or corner to resize · Hold ⇧ for free placement · ⌫ to delete")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 11))
 
-            Spacer()
-
-            if selection != nil {
-                Button("Deselect") {
-                    selection = nil
+                if selection != nil {
+                    HStack(spacing: 6) {
+                        Text("Drag to move")
+                        Text("•")
+                        Text("Edges to resize")
+                        Text("•")
+                        keycapBadge("⇧", label: "Free")
+                        Text("•")
+                        keycapBadge("⌫", label: "Delete")
+                        Text("•")
+                        keycapBadge("Esc", label: "Deselect")
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        Text("Click window to select")
+                        Text("•")
+                        Text("Drag to move")
+                        Text("•")
+                        Text("Edges to resize")
+                        Text("•")
+                        keycapBadge("⇧", label: "Free placement")
+                    }
                 }
-                .font(.caption)
-                .buttonStyle(.link)
+
+                Spacer(minLength: 0)
             }
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 16)
+            .frame(height: 30)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.4))
         }
-        .padding(.horizontal, 4)
+    }
+
+    private func keycapBadge(_ key: String, label: String) -> some View {
+        HStack(spacing: 3) {
+            Text(key)
+                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.primary.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
+                )
+            Text(label)
+        }
     }
 
     private func setupKeyboardMonitor() {
@@ -259,7 +311,9 @@ struct StackEditorView: View {
     }
 
     private func refreshAspects() {
-        aspects = (0..<max(1, stack?.screens ?? 1)).map { ScreenGeometry.aspectRatio(ofScreen: $0) }
+        let screens = max(1, stack?.screens ?? 1)
+        let mainAspect = ScreenGeometry.aspectRatio(ofScreen: 0)
+        aspects = Array(repeating: mainAspect, count: screens)
     }
 
     private func snapshotLayout(_ stack: Stack) {
@@ -327,7 +381,11 @@ struct StackEditorView: View {
         let siblings = stack.windows.filter { $0.screen == screen && $0.id != id }.map(\.rect)
         let result: CGRect
         if free {
-            result = ScreenGeometry.clamp(rect)
+            if isResize, let original {
+                result = SnapGrid.clampResize(rect: rect, original: original)
+            } else {
+                result = ScreenGeometry.clamp(rect)
+            }
         } else if isResize {
             result = SnapGrid.snapResize(rect: rect, original: original ?? rect, neighbours: siblings)
         } else {
@@ -359,7 +417,15 @@ private struct CanvasColumn: View {
             let canvases = Dictionary(uniqueKeysWithValues: rects.enumerated().map { ($0.offset, $0.element) })
 
             ZStack(alignment: .topLeading) {
+                Color.black.opacity(0.0001)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selection = nil
+                    }
+
                 ForEach(rects.indices, id: \.self) { i in
+                    let isScreenSelected = windows.contains { $0.id == selection && $0.screen == i }
                     ScreenCanvas(index: i,
                                  size: rects[i].size,
                                  windows: windows.filter { $0.screen == i },
@@ -377,9 +443,14 @@ private struct CanvasColumn: View {
                                  onRemove: onRemove)
                         .frame(width: rects[i].width, height: rects[i].height)
                         .offset(x: rects[i].minX, y: rects[i].minY + offsetY)
+                        .zIndex(isScreenSelected ? 10 : Double(i))
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selection = nil
+            }
         }
     }
 }
@@ -405,6 +476,10 @@ private struct ScreenCanvas: View {
                         endPoint: .bottom
                     )
                 )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selection = nil
+                }
 
             GridLines(columns: SnapGrid.columns, rows: SnapGrid.rows)
                 .stroke(Color.secondary.opacity(0.08), lineWidth: 0.5)
@@ -529,7 +604,6 @@ private struct WindowTile: View {
 
     @State private var start: CGRect?
     @State private var live: CGRect?
-    @State private var isHovered = false
 
     private var coordinateSpaceName: String { "ScreenCanvas_\(canvasIndex)" }
     private var isFree: Bool { NSEvent.modifierFlags.contains(.shift) }
@@ -542,61 +616,66 @@ private struct WindowTile: View {
 
     var body: some View {
         let box = pixels
-        return ZStack(alignment: .topLeading) {
+        ZStack(alignment: .topLeading) {
             windowBody(box: box)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+                .onTapGesture {
+                    onSelect()
+                }
                 .gesture(
                     DragGesture(minimumDistance: 2, coordinateSpace: .named(coordinateSpaceName))
                         .onChanged(handleMove)
                         .onEnded { _ in endMove() }
                 )
 
-            ResizeEdgeStrip(cursor: .resizeUpDown)
-                .frame(width: max(0, box.width - 20), height: 6)
-                .offset(x: 10, y: -3)
-                .gesture(resizeGesture(for: .top))
+            if isSelected {
+                ResizeEdgeStrip(cursor: .resizeUpDown)
+                    .frame(width: max(0, box.width - 20), height: 6)
+                    .offset(x: 10, y: -3)
+                    .gesture(resizeGesture(for: .top))
 
-            ResizeEdgeStrip(cursor: .resizeUpDown)
-                .frame(width: max(0, box.width - 20), height: 6)
-                .offset(x: 10, y: box.height - 3)
-                .gesture(resizeGesture(for: .bottom))
+                ResizeEdgeStrip(cursor: .resizeUpDown)
+                    .frame(width: max(0, box.width - 20), height: 6)
+                    .offset(x: 10, y: box.height - 3)
+                    .gesture(resizeGesture(for: .bottom))
 
-            ResizeEdgeStrip(cursor: .resizeLeftRight)
-                .frame(width: 6, height: max(0, box.height - 20))
-                .offset(x: -3, y: 10)
-                .gesture(resizeGesture(for: .leading))
+                ResizeEdgeStrip(cursor: .resizeLeftRight)
+                    .frame(width: 6, height: max(0, box.height - 20))
+                    .offset(x: -3, y: 10)
+                    .gesture(resizeGesture(for: .leading))
 
-            ResizeEdgeStrip(cursor: .resizeLeftRight)
-                .frame(width: 6, height: max(0, box.height - 20))
-                .offset(x: box.width - 3, y: 10)
-                .gesture(resizeGesture(for: .trailing))
+                ResizeEdgeStrip(cursor: .resizeLeftRight)
+                    .frame(width: 6, height: max(0, box.height - 20))
+                    .offset(x: box.width - 3, y: 10)
+                    .gesture(resizeGesture(for: .trailing))
 
-            ResizeCornerHandle(cursor: .crosshair)
-                .frame(width: 14, height: 14)
-                .offset(x: -4, y: -4)
-                .gesture(resizeGesture(for: .topLeading))
+                ResizeCornerHandle(cursor: .crosshair)
+                    .frame(width: 14, height: 14)
+                    .offset(x: -4, y: -4)
+                    .gesture(resizeGesture(for: .topLeading))
 
-            ResizeCornerHandle(cursor: .crosshair)
-                .frame(width: 14, height: 14)
-                .offset(x: box.width - 10, y: -4)
-                .gesture(resizeGesture(for: .topTrailing))
+                ResizeCornerHandle(cursor: .crosshair)
+                    .frame(width: 14, height: 14)
+                    .offset(x: box.width - 10, y: -4)
+                    .gesture(resizeGesture(for: .topTrailing))
 
-            ResizeCornerHandle(cursor: .crosshair)
-                .frame(width: 14, height: 14)
-                .offset(x: -4, y: box.height - 10)
-                .gesture(resizeGesture(for: .bottomLeading))
+                ResizeCornerHandle(cursor: .crosshair)
+                    .frame(width: 14, height: 14)
+                    .offset(x: -4, y: box.height - 10)
+                    .gesture(resizeGesture(for: .bottomLeading))
 
-            ResizeCornerHandle(cursor: .crosshair, showGrip: true, isSelected: isSelected || isHovered)
-                .frame(width: 16, height: 16)
-                .offset(x: box.width - 12, y: box.height - 12)
-                .gesture(resizeGesture(for: .bottomTrailing))
+                ResizeCornerHandle(cursor: .crosshair, showGrip: true, isSelected: true)
+                    .frame(width: 16, height: 16)
+                    .offset(x: box.width - 12, y: box.height - 12)
+                    .gesture(resizeGesture(for: .bottomTrailing))
+            }
         }
-        .frame(width: box.width, height: box.height, alignment: .topLeading)
-        .offset(x: box.minX, y: box.minY)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .onTapGesture {
-            if !isSelected { onSelect() }
+        .frame(width: box.width, height: box.height)
+        .position(x: box.midX, y: box.midY)
+        .onChange(of: window.rect) { _ in
+            withAnimation(.easeOut(duration: 0.12)) {
+                live = nil
+            }
         }
     }
 
@@ -632,7 +711,7 @@ private struct WindowTile: View {
                     Spacer(minLength: 0)
                 }
 
-                if isHovered || isSelected {
+                if isSelected {
                     Button {
                         onRemove()
                     } label: {
@@ -697,19 +776,19 @@ private struct WindowTile: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .fill(Color.accentColor.opacity(isSelected ? 0.12 : (isHovered ? 0.05 : 0)))
+                .fill(Color.accentColor.opacity(isSelected ? 0.12 : 0))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
                 .stroke(
-                    isSelected ? Color.accentColor : (isHovered ? Color.accentColor.opacity(0.5) : Color.primary.opacity(0.14)),
+                    isSelected ? Color.accentColor : Color.primary.opacity(0.14),
                     lineWidth: isSelected ? 2 : 1
                 )
         )
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .shadow(
-            color: Color.black.opacity(isSelected ? 0.22 : (isHovered ? 0.16 : 0.08)),
-            radius: isSelected ? 6 : (isHovered ? 4 : 2),
+            color: Color.black.opacity(isSelected ? 0.22 : 0.08),
+            radius: isSelected ? 6 : 2,
             x: 0,
             y: isSelected ? 3 : 1
         )
@@ -762,11 +841,35 @@ private struct WindowTile: View {
     }
 
     private func endMove() {
+        endInteraction(isResize: false)
+    }
+
+    private func endResize() {
+        endInteraction(isResize: true)
+    }
+
+    private func endInteraction(isResize: Bool) {
         let finalPixels = pixels
         let initialRect = start
         start = nil
-        live = nil
-        onCommit(finalPixels, isFree, false, initialRect)
+        let targetRect = CGRect(x: finalPixels.minX / max(1, canvas.width),
+                                y: finalPixels.minY / max(1, canvas.height),
+                                width: finalPixels.width / max(1, canvas.width),
+                                height: finalPixels.height / max(1, canvas.height))
+        if isClose(targetRect, window.rect) {
+            withAnimation(.easeOut(duration: 0.12)) {
+                live = nil
+            }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                if self.live != nil {
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        self.live = nil
+                    }
+                }
+            }
+        }
+        onCommit(finalPixels, isFree, isResize, initialRect)
     }
 
     private func handleResize(dir: ResizeDirection, g: DragGesture.Value) {
@@ -787,23 +890,27 @@ private struct WindowTile: View {
         var proposedH = start.height
 
         if dir.affectsLeading {
-            let newLeft = min(start.maxX - minW, start.minX + dx)
+            let newLeft = max(0.0, min(start.maxX - minW, start.minX + dx))
             proposedX = newLeft
             proposedW = start.maxX - newLeft
         } else if dir.affectsTrailing {
-            proposedW = max(minW, start.width + dx)
+            let newRight = min(1.0, max(start.minX + minW, start.maxX + dx))
+            proposedX = start.minX
+            proposedW = newRight - start.minX
         }
 
         if dir.affectsTop {
-            let newTop = min(start.maxY - minH, start.minY + dy)
+            let newTop = max(0.0, min(start.maxY - minH, start.minY + dy))
             proposedY = newTop
             proposedH = start.maxY - newTop
         } else if dir.affectsBottom {
-            proposedH = max(minH, start.height + dy)
+            let newBottom = min(1.0, max(start.minY + minH, start.maxY + dy))
+            proposedY = start.minY
+            proposedH = newBottom - start.minY
         }
 
         if isFree {
-            live = ScreenGeometry.clamp(CGRect(x: proposedX, y: proposedY, width: proposedW, height: proposedH))
+            live = CGRect(x: proposedX, y: proposedY, width: proposedW, height: proposedH)
         } else {
             let thresholdX: CGFloat = max(0.02, 12.0 / max(1, canvas.width))
             let thresholdY: CGFloat = max(0.02, 12.0 / max(1, canvas.height))
@@ -813,17 +920,18 @@ private struct WindowTile: View {
             if dir.affectsLeading {
                 for target in targetsX {
                     if abs(proposedX - target) <= thresholdX {
-                        let snappedX = min(start.maxX - minW, target)
+                        let snappedX = max(0.0, min(start.maxX - minW, target))
                         proposedW = start.maxX - snappedX
                         proposedX = snappedX
                         break
                     }
                 }
             } else if dir.affectsTrailing {
+                let currentRight = proposedX + proposedW
                 for target in targetsX {
-                    let rightEdge = proposedX + proposedW
-                    if abs(rightEdge - target) <= thresholdX {
-                        proposedW = max(minW, target - proposedX)
+                    if abs(currentRight - target) <= thresholdX {
+                        let snappedRight = min(1.0, max(start.minX + minW, target))
+                        proposedW = snappedRight - proposedX
                         break
                     }
                 }
@@ -832,32 +940,33 @@ private struct WindowTile: View {
             if dir.affectsTop {
                 for target in targetsY {
                     if abs(proposedY - target) <= thresholdY {
-                        let snappedY = min(start.maxY - minH, target)
+                        let snappedY = max(0.0, min(start.maxY - minH, target))
                         proposedH = start.maxY - snappedY
                         proposedY = snappedY
                         break
                     }
                 }
             } else if dir.affectsBottom {
+                let currentBottom = proposedY + proposedH
                 for target in targetsY {
-                    let bottomEdge = proposedY + proposedH
-                    if abs(bottomEdge - target) <= thresholdY {
-                        proposedH = max(minH, target - proposedY)
+                    if abs(currentBottom - target) <= thresholdY {
+                        let snappedBottom = min(1.0, max(start.minY + minH, target))
+                        proposedH = snappedBottom - proposedY
                         break
                     }
                 }
             }
 
-            live = ScreenGeometry.clamp(CGRect(x: proposedX, y: proposedY, width: proposedW, height: proposedH))
+            live = CGRect(x: proposedX, y: proposedY, width: proposedW, height: proposedH)
         }
     }
 
-    private func endResize() {
-        let finalPixels = pixels
-        let initialRect = start
-        start = nil
-        live = nil
-        onCommit(finalPixels, isFree, true, initialRect)
+
+    private func isClose(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.minX - b.minX) < 0.001 &&
+        abs(a.minY - b.minY) < 0.001 &&
+        abs(a.width - b.width) < 0.001 &&
+        abs(a.height - b.height) < 0.001
     }
 }
 
@@ -895,7 +1004,7 @@ private struct ResizeCornerHandle: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             Color.white.opacity(0.001)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: 14, height: 14)
 
             if showGrip {
                 Path { path in
@@ -910,6 +1019,7 @@ private struct ResizeCornerHandle: View {
                 .padding(2)
             }
         }
+        .frame(width: 14, height: 14)
         .contentShape(Rectangle())
         .onHover { hovering in
             if hovering && !isHovering {
@@ -938,17 +1048,17 @@ private struct TileInspector: View {
     @State private var draft: [String] = ["", "", "", ""]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 if let icon = AppIcon.image(for: window.bundleIdentifier) {
                     Image(nsImage: icon)
                         .resizable()
-                        .frame(width: 32, height: 32)
+                        .frame(width: 28, height: 28)
                         .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
                 } else {
                     Image(systemName: "macwindow")
-                        .font(.title2)
-                        .frame(width: 32, height: 32)
+                        .font(.title3)
+                        .frame(width: 28, height: 28)
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -956,7 +1066,7 @@ private struct TileInspector: View {
                         .font(.system(size: 13, weight: .bold))
                         .lineLimit(1)
                     Text(window.bundleIdentifier)
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 9))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -968,7 +1078,7 @@ private struct TileInspector: View {
             if screens == 2 {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("DISPLAY")
-                        .font(.system(size: 9.5, weight: .bold))
+                        .font(.system(size: 9, weight: .bold))
                         .foregroundColor(.secondary)
 
                     Picker("Display", selection: Binding(
@@ -982,17 +1092,18 @@ private struct TileInspector: View {
                         Text("Display 2").tag(1)
                     }
                     .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
 
                 Divider()
             }
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("QUICK PRESETS")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.secondary)
 
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)], spacing: 5) {
                     presetButton(title: "Left 1/2", icon: "rectangle.lefthalf.filled",
                                  rect: CGRect(x: 0, y: 0, width: 0.5, height: 1.0))
                     presetButton(title: "Right 1/2", icon: "rectangle.righthalf.filled",
@@ -1010,15 +1121,20 @@ private struct TileInspector: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text("GEOMETRY")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.secondary)
 
-                percentRow("X", 0)
-                percentRow("Y", 1)
-                percentRow("W", 2)
-                percentRow("H", 3)
+                HStack(spacing: 6) {
+                    compactPercentField("X", 0)
+                    compactPercentField("Y", 1)
+                }
+
+                HStack(spacing: 6) {
+                    compactPercentField("W", 2)
+                    compactPercentField("H", 3)
+                }
             }
 
             Spacer(minLength: 4)
@@ -1035,7 +1151,7 @@ private struct TileInspector: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .controlSize(.regular)
+            .controlSize(.small)
             .help("Remove this window from the stack")
         }
         .padding(12)
@@ -1058,39 +1174,39 @@ private struct TileInspector: View {
             updated.rect = rect
             onChange(updated)
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 10))
+                    .font(.system(size: 9))
                 Text(title)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 3)
+            .padding(.vertical, 2)
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
     }
 
-    private func percentRow(_ label: String, _ index: Int) -> some View {
-        HStack(spacing: 5) {
+    private func compactPercentField(_ label: String, _ index: Int) -> some View {
+        HStack(spacing: 3) {
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 14, alignment: .leading)
+                .font(.system(size: 10.5, weight: .semibold))
                 .foregroundColor(.secondary)
+                .frame(width: 12, alignment: .leading)
 
             Button {
                 step(index, delta: -5)
             } label: {
                 Image(systemName: "minus")
-                    .font(.system(size: 8.5))
+                    .font(.system(size: 8))
             }
             .buttonStyle(.borderless)
-            .frame(width: 14, height: 14)
+            .frame(width: 11, height: 11)
 
             TextField("", text: $draft[index])
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: 10.5, design: .monospaced))
                 .multilineTextAlignment(.center)
-                .frame(width: 34)
+                .frame(width: 32)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { commit() }
 
@@ -1098,15 +1214,16 @@ private struct TileInspector: View {
                 step(index, delta: 5)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 8.5))
+                    .font(.system(size: 8))
             }
             .buttonStyle(.borderless)
-            .frame(width: 14, height: 14)
+            .frame(width: 11, height: 11)
 
             Text("%")
-                .font(.system(size: 10.5))
+                .font(.system(size: 9.5))
                 .foregroundColor(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func step(_ index: Int, delta: Double) {
@@ -1144,18 +1261,16 @@ private struct TileInspector: View {
 
 private struct StackOverviewInspector: View {
     let stack: Stack
-    var onAddApp: () -> Void
-    var onSnapshot: () -> Void
-    let isSnapshotting: Bool
+    var onSelectWindow: (UUID) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(Color.accentColor.opacity(0.12))
                         .frame(width: 32, height: 32)
-                    Image(systemName: "square.stack.3d.up")
+                    Image(systemName: "macwindow.on.rectangle")
                         .font(.system(size: 15))
                         .foregroundColor(.accentColor)
                 }
@@ -1171,60 +1286,54 @@ private struct StackOverviewInspector: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("WINDOW ARRANGEMENT")
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundColor(.secondary)
-
-                Text("Click any window tile on the canvas to inspect its geometry, choose quick presets (halves, full screen, thirds), or reassign displays.")
-                    .font(.system(size: 10.5))
-                    .foregroundColor(.secondary)
-                    .lineSpacing(2)
-            }
-
-            Divider()
-
-            VStack(spacing: 8) {
-                Button {
-                    onAddApp()
-                } label: {
-                    Label("Add Application…", systemImage: "plus")
-                        .frame(maxWidth: .infinity)
+            if stack.windows.isEmpty {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "macwindow.badge.plus")
+                        .font(.system(size: 28))
+                        .foregroundColor(.secondary.opacity(0.5))
+                    Text("No Windows")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Text("Use Add App… or Snapshot in the toolbar above to populate this stack.")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(2)
+                        .padding(.horizontal, 6)
+                    Spacer()
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("WINDOWS")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(.secondary)
 
-                Button {
-                    onSnapshot()
-                } label: {
-                    HStack(spacing: 5) {
-                        if isSnapshotting {
-                            ProgressView().controlSize(.small)
-                            Text("Capturing…")
-                        } else {
-                            Image(systemName: "camera")
-                            Text("Snapshot Layout")
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(spacing: 4) {
+                            ForEach(stack.windows) { win in
+                                WindowListItemView(window: win, screens: stack.screens) {
+                                    onSelectWindow(win.id)
+                                }
+                            }
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .disabled(isSnapshotting)
-            }
 
-            Spacer(minLength: 4)
+                Spacer(minLength: 4)
 
-            Divider()
+                Divider()
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("TIPS & SHORTCUTS")
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundColor(.secondary)
-                Text("• Drag any edge or corner to resize\n• Magnetic snap aligns to edges\n• Hold ⇧ for free placement\n• ⌫ removes selected window\n• Esc deselects window")
-                    .font(.system(size: 9.5))
-                    .foregroundColor(.secondary)
-                    .lineSpacing(2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("SELECTION")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(.secondary)
+                    Text("Select a window on the canvas or from the list above to edit its display, presets, and exact coordinates.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineSpacing(2)
+                }
             }
         }
         .padding(12)
@@ -1236,5 +1345,65 @@ private struct StackOverviewInspector: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 1)
         )
+    }
+}
+
+private struct WindowListItemView: View {
+    let window: WindowSnapshot
+    let screens: Int
+    var onSelect: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 8) {
+                if let icon = AppIcon.image(for: window.bundleIdentifier) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 20, height: 20)
+                } else {
+                    Image(systemName: "macwindow")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                        .frame(width: 20, height: 20)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(window.appName)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+
+                    Text(geometrySummary)
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.secondary.opacity(isHovered ? 0.8 : 0.3))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    private var geometrySummary: String {
+        let size = "\(Int((window.rect.width * 100).rounded()))% × \(Int((window.rect.height * 100).rounded()))%"
+        if screens > 1 {
+            return "Display \(window.screen + 1) · \(size)"
+        }
+        return size
     }
 }
