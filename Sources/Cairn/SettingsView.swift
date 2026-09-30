@@ -7,66 +7,318 @@ struct SettingsView: View {
     @State private var selectedStackID: Stack.ID?
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                HStack {
-                    Text("Stacks").font(.headline)
+        HStack(spacing: 0) {
+            sidebarView
+                .frame(minWidth: 190, idealWidth: 210, maxWidth: 240)
+                .background(Color(nsColor: .controlBackgroundColor))
+
+            Divider()
+
+            detailView
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 840, minHeight: 540)
+        .onAppear {
+            hasPermissions = WindowEngine.isTrusted(promptIfNeeded: false)
+            ensureSelection()
+        }
+        .onChange(of: stackManager.stacks.map(\.id)) { _ in
+            ensureSelection()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            hasPermissions = WindowEngine.isTrusted(promptIfNeeded: false)
+        }
+    }
+
+    private func ensureSelection() {
+        if let id = selectedStackID, stackManager.stacks.contains(where: { $0.id == id }) {
+            return
+        }
+        selectedStackID = stackManager.stacks.first?.id
+    }
+
+    private var sidebarView: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Stacks")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Text("\(stackManager.stacks.count)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.secondary.opacity(0.12)))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            if stackManager.stacks.isEmpty {
+                VStack(spacing: 12) {
                     Spacer()
+                    Image(systemName: "square.stack.3d.up.slash")
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary.opacity(0.6))
+                    Text("No Stacks Saved")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.secondary)
                     Button {
-                        stackManager.addStack(Stack(name: "New Stack", windows: []))
+                        addBlankStack()
                     } label: {
-                        Image(systemName: "plus")
+                        Label("New Stack", systemImage: "plus")
                     }
-                    .buttonStyle(.borderless)
-                    .help("New Stack")
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    Spacer()
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-
-                Divider()
-
+                .padding()
+                .frame(maxWidth: .infinity)
+            } else {
                 List(selection: $selectedStackID) {
                     ForEach(stackManager.stacks) { stack in
-                        Text(stack.name).tag(stack.id)
+                        StackRow(stack: stack, isSelected: stack.id == selectedStackID)
+                            .tag(stack.id)
+                            .contextMenu {
+                                Button {
+                                    let owning = ScreenGeometry.owningScreen()
+                                    WindowEngine.open(stack: stack, owningScreen: owning)
+                                } label: {
+                                    Label("Apply Layout", systemImage: "play.fill")
+                                }
+
+                                Button {
+                                    duplicateStack(stack)
+                                } label: {
+                                    Label("Duplicate", systemImage: "plus.square.on.square")
+                                }
+
+                                Divider()
+
+                                Button(role: .destructive) {
+                                    deleteStack(stack)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                     }
                     .onDelete(perform: stackManager.deleteStack)
                 }
                 .listStyle(.sidebar)
             }
 
-            if let id = selectedStackID {
+            Divider()
+
+            HStack(spacing: 8) {
+                Menu {
+                    Button {
+                        addBlankStack()
+                    } label: {
+                        Label("New Blank Stack", systemImage: "plus.rectangle")
+                    }
+
+                    Button {
+                        snapshotToNewStack()
+                    } label: {
+                        Label("Snapshot Current Windows", systemImage: "camera")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 24, height: 24)
+                .help("Add Stack")
+
+                Button {
+                    if let id = selectedStackID, let stack = stackManager.stacks.first(where: { $0.id == id }) {
+                        deleteStack(stack)
+                    }
+                } label: {
+                    Image(systemName: "minus")
+                }
+                .buttonStyle(.borderless)
+                .frame(width: 24, height: 24)
+                .disabled(selectedStackID == nil)
+                .help("Delete Selected Stack")
+
+                Spacer()
+
+                Text("\(stackManager.stacks.count) \(stackManager.stacks.count == 1 ? "stack" : "stacks")")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .controlBackgroundColor))
+        }
+    }
+
+    private var detailView: some View {
+        VStack(spacing: 0) {
+            if !hasPermissions {
+                accessibilityBanner
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if let id = selectedStackID, stackManager.stacks.contains(where: { $0.id == id }) {
                 StackEditorView(stackID: id, manager: stackManager)
             } else {
-                Text("Select a stack to view details.")
+                emptyDetailState
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            if !hasPermissions {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                    Text("Cairn needs Accessibility permission to move windows.")
-                        .font(.caption)
-                    Spacer()
-                    Button("Allow") {
-                        _ = WindowEngine.isTrusted(promptIfNeeded: true)
-                        hasPermissions = WindowEngine.isTrusted(promptIfNeeded: false)
-                    }
+    }
+
+    private var accessibilityBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.shield.fill")
+                .font(.title2)
+                .foregroundColor(.orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Accessibility Permission Required")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                Text("Cairn requires accessibility access to move and tile windows across your displays.")
                     .font(.caption)
-                    .help("Grant Cairn permission to move windows")
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity)
-                .background(.thinMaterial)
+                    .foregroundColor(.secondary)
             }
+
+            Spacer()
+
+            Button("Grant Access…") {
+                _ = WindowEngine.isTrusted(promptIfNeeded: true)
+                hasPermissions = WindowEngine.isTrusted(promptIfNeeded: false)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .help("Grant Cairn permission in System Settings")
         }
-        .frame(minWidth: 600, minHeight: 400)
-        .onAppear {
-            hasPermissions = WindowEngine.isTrusted(promptIfNeeded: false)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.orange.opacity(0.12))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.orange.opacity(0.25)),
+            alignment: .bottom
+        )
+    }
+
+    private var emptyDetailState: some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.08))
+                    .frame(width: 80, height: 80)
+                Image(systemName: "square.stack.3d.up")
+                    .font(.system(size: 38))
+                    .foregroundColor(.accentColor)
+            }
+
+            VStack(spacing: 6) {
+                Text("Select a Stack")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.primary)
+
+                Text("Choose a stack from the sidebar to inspect and arrange its layout, or create a new workspace.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    addBlankStack()
+                } label: {
+                    Label("New Blank Stack", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    snapshotToNewStack()
+                } label: {
+                    Label("Snapshot Current Windows", systemImage: "camera")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.top, 4)
+
+            Spacer()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            hasPermissions = WindowEngine.isTrusted(promptIfNeeded: false)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private func addBlankStack() {
+        createStack(windows: [])
+    }
+
+    private func snapshotToNewStack() {
+        WindowEngine.snapshot(screens: 1) { windows in
+            createStack(windows: windows)
         }
+    }
+
+    private func createStack(windows: [WindowSnapshot]) {
+        let count = stackManager.stacks.count + 1
+        let stack = Stack(name: "Stack \(count)", windows: windows)
+        stackManager.addStack(stack)
+        selectedStackID = stack.id
+    }
+
+    private func duplicateStack(_ stack: Stack) {
+        let duplicate = Stack(name: "\(stack.name) Copy", windows: stack.windows, screens: stack.screens)
+        stackManager.addStack(duplicate)
+        selectedStackID = duplicate.id
+    }
+
+    private func deleteStack(_ stack: Stack) {
+        if selectedStackID == stack.id {
+            selectedStackID = nil
+        }
+        stackManager.deleteStack(stack)
+        ensureSelection()
+    }
+}
+
+private struct StackRow: View {
+    let stack: Stack
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: stack.screens > 1 ? "display.2" : "macwindow.on.rectangle")
+                .font(.system(size: 14))
+                .foregroundColor(isSelected ? .accentColor : .secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(stack.name)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .lineLimit(1)
+                    .foregroundColor(.primary)
+
+                Text(summary)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var summary: String {
+        let win = "\(stack.windows.count) \(stack.windows.count == 1 ? "window" : "windows")"
+        let scr = stack.screens == 1 ? "1 display" : "2 displays"
+        return "\(win) · \(scr)"
     }
 }

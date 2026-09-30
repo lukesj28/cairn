@@ -14,20 +14,36 @@ public enum SnapGrid {
     }
 
     public static func snapResize(_ rect: CGRect, neighbours: [CGRect]) -> CGRect {
-        let edgeX = magnet(rect.maxX, to: targets(neighbours, vertical: false)) ?? quantise(rect.maxX, divisions: columns)
-        let width = max(1 / CGFloat(columns), edgeX - rect.minX)
-
-        let edgeY = magnet(rect.maxY, to: targets(neighbours, vertical: true)) ?? quantise(rect.maxY, divisions: rows)
-        let height = max(1 / CGFloat(rows), edgeY - rect.minY)
-
-        return ScreenGeometry.clamp(CGRect(x: rect.minX, y: rect.minY, width: width, height: height))
+        snapResize(rect: rect, original: rect, neighbours: neighbours)
     }
 
-    static func quantise(_ value: CGFloat, divisions: Int) -> CGFloat {
+    public static func snapResize(rect: CGRect, original: CGRect, neighbours: [CGRect]) -> CGRect {
+        let x = snapResizeAxis(min: rect.minX, max: rect.maxX, originalMin: original.minX,
+                               divisions: columns, targets: targets(neighbours, vertical: false))
+        let y = snapResizeAxis(min: rect.minY, max: rect.maxY, originalMin: original.minY,
+                               divisions: rows, targets: targets(neighbours, vertical: true))
+        return ScreenGeometry.clamp(CGRect(x: x.origin, y: y.origin, width: x.length, height: y.length))
+    }
+
+    private static func snapResizeAxis(min: CGFloat, max: CGFloat, originalMin: CGFloat,
+                                       divisions: Int, targets: [CGFloat]) -> (origin: CGFloat, length: CGFloat) {
+        let minLength = 1 / CGFloat(divisions)
+        if abs(min - originalMin) > 0.001 {
+            let edge = magnet(min, to: targets) ?? quantise(min, divisions: divisions)
+            let length = Swift.max(minLength, max - edge)
+            return (origin: max - length, length: length)
+        } else {
+            let edge = magnet(max, to: targets) ?? quantise(max, divisions: divisions)
+            let length = Swift.max(minLength, edge - min)
+            return (origin: min, length: length)
+        }
+    }
+
+    public static func quantise(_ value: CGFloat, divisions: Int) -> CGFloat {
         (value * CGFloat(divisions)).rounded() / CGFloat(divisions)
     }
 
-    static func targets(_ neighbours: [CGRect], vertical: Bool) -> [CGFloat] {
+    public static func targets(_ neighbours: [CGRect], vertical: Bool) -> [CGFloat] {
         var values: Set<CGFloat> = [0, 1]
         for n in neighbours {
             values.insert(vertical ? n.minY : n.minX)
@@ -36,7 +52,7 @@ public enum SnapGrid {
         return values.sorted()
     }
 
-    static func magnet(_ value: CGFloat, to targets: [CGFloat]) -> CGFloat? {
+    public static func magnet(_ value: CGFloat, to targets: [CGFloat]) -> CGFloat? {
         var best: CGFloat?
         var bestDistance = CGFloat.infinity
         for t in targets {
