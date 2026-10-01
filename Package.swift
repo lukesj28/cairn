@@ -4,6 +4,9 @@ import PackageDescription
 let package = Package(
     name: "Cairn",
     platforms: [.macOS(.v12)],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+    ],
     targets: [
         .target(
             name: "CairnKit",
@@ -11,11 +14,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "Cairn",
-            dependencies: ["CairnKit"],
+            dependencies: ["CairnKit", .product(name: "Sparkle", package: "Sparkle")],
             resources: [
                 .process("Resources")
             ],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(
             name: "CairnKitTests",

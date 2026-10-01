@@ -13,10 +13,14 @@ APP_BUNDLE = $(APP_NAME).app
 ENTITLEMENTS ?= Cairn.entitlements
 ENTITLEMENTS_FLAG = $(if $(wildcard $(ENTITLEMENTS)),--entitlements $(ENTITLEMENTS),)
 
+SPARKLE_BIN = .build/artifacts/sparkle/Sparkle/bin
+SPARKLE_FW = $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
+DOWNLOAD_URL_PREFIX ?=
+
 SOURCES = $(shell find Sources -name '*.swift')
 RESOURCES = $(shell find Sources/$(APP_NAME)/Resources -type f 2>/dev/null)
 
-.PHONY: all dev app-dev app-release dmg notarize release test run clean help
+.PHONY: all dev app-dev app-release dmg notarize release appcast test run clean help
 
 all: dev
 
@@ -25,6 +29,11 @@ define assemble_app
 	@mkdir -p $(APP_BUNDLE)/Contents/Resources
 	@cp Info.plist $(APP_BUNDLE)/Contents/
 	@cp .build/$(1)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME)
+	@mkdir -p $(APP_BUNDLE)/Contents/Frameworks
+	@for fw in .build/$(1)/Sparkle*.framework; do \
+		ditto "$$fw" $(APP_BUNDLE)/Contents/Frameworks/$$(basename "$$fw"); \
+	done
+	@rm -rf $(SPARKLE_FW)/Versions/B/XPCServices $(SPARKLE_FW)/XPCServices
 	@if [ -f Sources/$(APP_NAME)/Resources/AppIcon.icns ]; then \
 		cp Sources/$(APP_NAME)/Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/; \
 	fi
@@ -60,24 +69,23 @@ app-release: $(SOURCES) $(RESOURCES) Info.plist Package.swift
 		codesign --force --timestamp --options runtime --sign "$(CODESIGN_IDENTITY)" \
 			$(APP_BUNDLE)/Contents/Resources/$(APP_NAME)_$(APP_NAME).bundle 2>/dev/null || true; \
 	fi
-	codesign --force --deep --options runtime --timestamp $(ENTITLEMENTS_FLAG) \
-		--sign "$(CODESIGN_IDENTITY)" $(APP_BUNDLE)
+	codesign --force --options runtime --timestamp --sign "$(CODESIGN_IDENTITY)" $(SPARKLE_FW)/Versions/B/Autoupdate
+	codesign --force --options runtime --timestamp --sign "$(CODESIGN_IDENTITY)" $(SPARKLE_FW)/Versions/B/Updater.app
+	@for fw in $(APP_BUNDLE)/Contents/Frameworks/Sparkle*.framework; do \
+		codesign --force --options runtime --timestamp --sign "$(CODESIGN_IDENTITY)" "$$fw"; \
+	done
+	codesign --force --options runtime --timestamp $(ENTITLEMENTS_FLAG) --sign "$(CODESIGN_IDENTITY)" $(APP_BUNDLE)
 	codesign --verify --deep --strict --verbose=2 $(APP_BUNDLE)
 	@echo "==> Release app signed and verified: $(APP_BUNDLE)"
 
 dmg: app-release
 	@mkdir -p $(DIST_DIR)
 	@rm -f $(DMG_PATH)
-	@rm -rf $(DIST_DIR)/dmg_staging
-	@mkdir -p $(DIST_DIR)/dmg_staging
-	@cp -R $(APP_BUNDLE) $(DIST_DIR)/dmg_staging/
-	@ln -s /Applications $(DIST_DIR)/dmg_staging/Applications
-	@echo "==> Creating disk image: $(DMG_PATH)..."
-	hdiutil create -volname "$(APP_NAME)" \
-		-srcfolder $(DIST_DIR)/dmg_staging \
-		-ov -format UDZO \
+	@echo "==> Creating disk image with dmgbuild: $(DMG_PATH)..."
+	dmgbuild -s packaging/dmg/settings.py \
+		-D app=$(APP_BUNDLE) \
+		"$(APP_NAME)" \
 		$(DMG_PATH)
-	@rm -rf $(DIST_DIR)/dmg_staging
 	@echo "==> Signing DMG..."
 	codesign --force --timestamp --sign "$(CODESIGN_IDENTITY)" $(DMG_PATH)
 	codesign --verify --verbose=2 $(DMG_PATH)
@@ -95,7 +103,19 @@ notarize: dmg
 	@echo "==> Release DMG notarized and stapled: $(DMG_PATH)"
 
 release: notarize
+	$(MAKE) appcast
 	@echo "==> Release complete: $(DMG_PATH)"
+
+appcast:
+	@test -n "$(DOWNLOAD_URL_PREFIX)" || (echo "Set DOWNLOAD_URL_PREFIX (URL folder hosting $(DMG_NAME), trailing slash)" && exit 1)
+	@test -f $(DMG_PATH) || (echo "Missing $(DMG_PATH); run make dmg or make notarize first" && exit 1)
+	@rm -rf $(DIST_DIR)/appcast_staging $(DIST_DIR)/appcast.xml
+	@mkdir -p $(DIST_DIR)/appcast_staging
+	@cp $(DMG_PATH) $(DIST_DIR)/appcast_staging/
+	$(SPARKLE_BIN)/generate_appcast --download-url-prefix "$(DOWNLOAD_URL_PREFIX)" $(DIST_DIR)/appcast_staging
+	@mv $(DIST_DIR)/appcast_staging/appcast.xml $(DIST_DIR)/appcast.xml
+	@rm -rf $(DIST_DIR)/appcast_staging
+	@echo "==> Upload $(DMG_PATH) to $(DOWNLOAD_URL_PREFIX) and publish $(DIST_DIR)/appcast.xml at https://lukesj28.github.io/cairn/appcast.xml"
 
 test:
 	DEVELOPER_DIR=$(DEVELOPER_DIR) swift test
@@ -117,3 +137,4 @@ help:
 	@echo "  make test         Run Swift test suite"
 	@echo "  make run          Launch $(APP_BUNDLE)"
 	@echo "  make clean        Remove build directories and artifacts"
+	@echo "  make appcast      Generate dist/appcast.xml (EdDSA-signed) for the current DMG; needs DOWNLOAD_URL_PREFIX"

@@ -1,0 +1,103 @@
+name: Release Cairn
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-publish:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Apple Certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          CERT_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERT_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          rm -f "$CERT_PATH"
+
+          security list-keychains -s "$KEYCHAIN_PATH" /Library/Keychains/System.keychain
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+      - name: Configure Notary Profile
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials "notary-profile" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$APP_SPECIFIC_PASSWORD"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dmgbuild
+        run: pip install dmgbuild
+
+      - name: Build, Sign, and Notarize DMG
+        env:
+          CODESIGN_IDENTITY: "Developer ID Application"
+        run: make notarize
+
+      - name: Generate Appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          SPARKLE_BIN=$(find .build -name generate_appcast -type f -perm +111 | head -n 1)
+          if [ -z "$SPARKLE_BIN" ]; then
+            curl -fsSL https://github.com/sparkle-project/Sparkle/releases/download/2.6.0/Sparkle-2.6.0.tar.xz | tar -xJ
+            SPARKLE_BIN=bin/generate_appcast
+          fi
+
+          curl -fsSL https://lukesj28.github.io/cairn/appcast.xml -o dist/appcast.xml || true
+
+          echo -n "$SPARKLE_PRIVATE_KEY" | "$SPARKLE_BIN" \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/lukesj28/cairn/releases/download/${{ github.ref_name }}/" \
+            dist/
+
+          mkdir -p pages-deploy
+          cp dist/appcast.xml pages-deploy/
+          touch pages-deploy/.nojekyll
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Cairn.dmg
+            dist/appcast.xml
+          generate_release_notes: true
+
+      - name: Publish Appcast to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./pages-deploy
+          publish_branch: gh-pages
+
+      - name: Cleanup
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true

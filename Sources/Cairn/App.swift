@@ -2,13 +2,16 @@ import Cocoa
 import SwiftUI
 import Combine
 import CairnKit
+import Sparkle
 
 @main
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     private var statusItem: NSStatusItem!
     private let stackManager = StackManager()
     private var settingsWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
+    private var updaterController: SPUStandardUpdaterController!
+    private var installUpdate: (() -> Void)?
 
     static func main() {
         let app = NSApplication.shared
@@ -26,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.image = loadMenuBarIcon()
         }
+
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
 
         buildMenu()
 
@@ -66,6 +71,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
+        if installUpdate != nil {
+            let item = NSMenuItem(title: "Restart to Update", action: #selector(restartToUpdate), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        } else {
+            let item = NSMenuItem(title: "Check for Updates", action: #selector(checkForUpdates), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
 
         menu.addItem(NSMenuItem.separator())
         let quitItem = NSMenuItem(title: "Quit Cairn", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -96,6 +110,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func checkForUpdates() {
+        NSApp.activate(ignoringOtherApps: true)
+        updaterController.checkForUpdates(nil)
+    }
+
+    @objc private func restartToUpdate() {
+        installUpdate?()
+    }
+
+    func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem, immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
+        installUpdate = immediateInstallHandler
+        buildMenu()
+        return true
     }
 
     @objc private func snapshotNewStack() {
