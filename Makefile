@@ -25,19 +25,19 @@ RESOURCES = $(shell find Sources/$(APP_NAME)/Resources -type f 2>/dev/null)
 all: dev
 
 define assemble_app
-	@mkdir -p $(APP_BUNDLE)/Contents/MacOS
-	@mkdir -p $(APP_BUNDLE)/Contents/Resources
-	@cp Info.plist $(APP_BUNDLE)/Contents/
-	@cp .build/$(1)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME)
-	@mkdir -p $(APP_BUNDLE)/Contents/Frameworks
-	@for fw in .build/$(1)/Sparkle*.framework; do \
-		ditto "$$fw" $(APP_BUNDLE)/Contents/Frameworks/$$(basename "$$fw"); \
-	done
-	@rm -rf $(SPARKLE_FW)/Versions/B/XPCServices $(SPARKLE_FW)/XPCServices
-	@if [ -f Sources/$(APP_NAME)/Resources/AppIcon.icns ]; then \
+	@BIN_DIR=$$(DEVELOPER_DIR=$(DEVELOPER_DIR) swift build --build-system swiftbuild -c $(1) --show-bin-path 2>/dev/null); \
+	[ -f "$$BIN_DIR/$(APP_NAME)" ] || BIN_DIR=".build/$(1)"; \
+	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources $(APP_BUNDLE)/Contents/Frameworks; \
+	cp Info.plist $(APP_BUNDLE)/Contents/; \
+	cp "$$BIN_DIR/$(APP_NAME)" $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME); \
+	for fw in "$$BIN_DIR"/Sparkle*.framework; do \
+		[ -d "$$fw" ] && ditto "$$fw" $(APP_BUNDLE)/Contents/Frameworks/$$(basename "$$fw"); \
+	done; \
+	rm -rf $(SPARKLE_FW)/Versions/B/XPCServices $(SPARKLE_FW)/XPCServices; \
+	if [ -f Sources/$(APP_NAME)/Resources/AppIcon.icns ]; then \
 		cp Sources/$(APP_NAME)/Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/; \
-	fi
-	@if DEVELOPER_DIR=$(DEVELOPER_DIR) xcrun --find actool >/dev/null 2>&1; then \
+	fi; \
+	if DEVELOPER_DIR=$(DEVELOPER_DIR) xcrun --find actool >/dev/null 2>&1; then \
 		DEVELOPER_DIR=$(DEVELOPER_DIR) xcrun actool Sources/$(APP_NAME)/Resources/Assets.xcassets \
 			--compile $(APP_BUNDLE)/Contents/Resources \
 			--platform macosx \
@@ -45,9 +45,9 @@ define assemble_app
 			--app-icon AppIcon \
 			--output-partial-info-plist /tmp/cairn-actool-partial.plist >/dev/null 2>&1; \
 		rm -f /tmp/cairn-actool-partial.plist; \
-	fi
-	@for b in .build/$(1)/*.bundle; do \
-		if [ -d "$$b" ]; then cp -R "$$b" $(APP_BUNDLE)/Contents/Resources/; fi; \
+	fi; \
+	for b in "$$BIN_DIR"/*.bundle; do \
+		[ -d "$$b" ] && cp -R "$$b" $(APP_BUNDLE)/Contents/Resources/; \
 	done
 endef
 
