@@ -120,41 +120,37 @@ struct StacksView: View {
 
             Divider()
 
-            HStack(spacing: 8) {
-                Button {
+            HStack(spacing: 4) {
+                sidebarButton("plus", help: "New Empty Stack") {
                     addBlankStack()
-                } label: {
-                    Image(systemName: "plus")
                 }
-                .buttonStyle(.borderless)
-                .frame(width: 24, height: 24)
-                .help("New Empty Stack")
 
-                Button {
+                sidebarButton("minus", help: "Delete Selected Stack", disabled: selectedStackID == nil) {
                     if let id = selectedStackID, let stack = stackManager.stacks.first(where: { $0.id == id }) {
                         deleteStack(stack)
                     }
-                } label: {
-                    Image(systemName: "minus")
                 }
-                .buttonStyle(.borderless)
-                .frame(width: 24, height: 24)
-                .disabled(selectedStackID == nil)
-                .help("Delete Selected Stack")
 
                 Spacer()
 
-                Button(action: openSettings) {
-                    Image(systemName: "gearshape")
-                }
-                .buttonStyle(.borderless)
-                .frame(width: 24, height: 24)
-                .help("Settings (⌘,)")
+                sidebarButton("gearshape", help: "Settings (⌘,)", action: openSettings)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .background(Color(nsColor: .controlBackgroundColor))
         }
+    }
+
+    private func sidebarButton(_ icon: String, help: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(disabled)
+        .help(help)
     }
 
     private var detailView: some View {
@@ -166,6 +162,7 @@ struct StacksView: View {
 
             if let id = selectedStackID, stackManager.stacks.contains(where: { $0.id == id }) {
                 StackEditorView(stackID: id, manager: stackManager)
+                    .id(id)
             } else {
                 emptyDetailState
             }

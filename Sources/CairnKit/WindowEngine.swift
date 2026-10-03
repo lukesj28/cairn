@@ -491,7 +491,8 @@ public enum WindowEngine {
     private static func findNewWindowMenuItem(in axApp: AXUIElement) -> AXUIElement? {
         var menuBarRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarRef) == .success,
-              let menuBar = menuBarRef else { return nil }
+              let menuBar = menuBarRef,
+              CFGetTypeID(menuBar) == AXUIElementGetTypeID() else { return nil }
 
         var menusRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(menuBar as! AXUIElement, kAXChildrenAttribute as CFString, &menusRef) == .success,
