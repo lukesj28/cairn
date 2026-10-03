@@ -46,15 +46,15 @@ define assemble_app
 			--output-partial-info-plist /tmp/cairn-actool-partial.plist >/dev/null 2>&1; \
 		rm -f /tmp/cairn-actool-partial.plist; \
 	fi
-	@if [ -d .build/$(1)/$(APP_NAME)_$(APP_NAME).bundle ]; then \
-		cp -R .build/$(1)/$(APP_NAME)_$(APP_NAME).bundle $(APP_BUNDLE)/Contents/Resources/; \
-	fi
+	@for b in .build/$(1)/*.bundle; do \
+		if [ -d "$$b" ]; then cp -R "$$b" $(APP_BUNDLE)/Contents/Resources/; fi; \
+	done
 endef
 
 dev: app-dev
 
 app-dev: $(SOURCES) $(RESOURCES) Info.plist Package.swift
-	DEVELOPER_DIR=$(DEVELOPER_DIR) swift build -c debug --product $(APP_NAME)
+	DEVELOPER_DIR=$(DEVELOPER_DIR) swift build --build-system swiftbuild -c debug --product $(APP_NAME)
 	@rm -rf $(APP_BUNDLE)
 	$(call assemble_app,debug)
 	codesign --force --deep --sign - $(APP_BUNDLE)
@@ -62,13 +62,14 @@ app-dev: $(SOURCES) $(RESOURCES) Info.plist Package.swift
 	@echo "Run with: make run"
 
 app-release: $(SOURCES) $(RESOURCES) Info.plist Package.swift
-	DEVELOPER_DIR=$(DEVELOPER_DIR) swift build -c release --product $(APP_NAME)
+	DEVELOPER_DIR=$(DEVELOPER_DIR) swift build --build-system swiftbuild -c release --product $(APP_NAME)
 	@rm -rf $(APP_BUNDLE)
 	$(call assemble_app,release)
-	@if [ -d $(APP_BUNDLE)/Contents/Resources/$(APP_NAME)_$(APP_NAME).bundle ]; then \
-		codesign --force --timestamp --options runtime --sign "$(CODESIGN_IDENTITY)" \
-			$(APP_BUNDLE)/Contents/Resources/$(APP_NAME)_$(APP_NAME).bundle 2>/dev/null || true; \
-	fi
+	@for b in $(APP_BUNDLE)/Contents/Resources/*.bundle; do \
+		if [ -d "$$b" ]; then \
+			codesign --force --timestamp --options runtime --sign "$(CODESIGN_IDENTITY)" "$$b" 2>/dev/null || true; \
+		fi; \
+	done
 	codesign --force --options runtime --timestamp --sign "$(CODESIGN_IDENTITY)" $(SPARKLE_FW)/Versions/B/Autoupdate
 	codesign --force --options runtime --timestamp --sign "$(CODESIGN_IDENTITY)" $(SPARKLE_FW)/Versions/B/Updater.app
 	@for fw in $(APP_BUNDLE)/Contents/Frameworks/Sparkle*.framework; do \
