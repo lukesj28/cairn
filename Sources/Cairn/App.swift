@@ -8,7 +8,8 @@ import Sparkle
 final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     private var statusItem: NSStatusItem!
     private let stackManager = StackManager()
-    private var settingsWindow: NSWindow?
+    private var mainWindow: NSWindow?
+    private let navigation = Navigation()
     private var cancellables = Set<AnyCancellable>()
     private var updaterController: SPUStandardUpdaterController!
     private var installUpdate: (() -> Void)?
@@ -44,15 +45,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     private func buildMenu() {
         let menu = NSMenu()
+        let openItem = NSMenuItem(title: "Open Cairn", action: #selector(showMainWindow), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+        menu.addItem(NSMenuItem.separator())
 
         if stackManager.stacks.isEmpty {
             let emptyItem = NSMenuItem(title: "(No Stacks Saved)", action: nil, keyEquivalent: "")
             emptyItem.isEnabled = false
             menu.addItem(emptyItem)
         } else {
-            for (idx, stack) in stackManager.stacks.enumerated() {
-                let keyEq = idx < 9 ? "\(idx + 1)" : ""
-                let item = NSMenuItem(title: stack.name, action: #selector(openStack(_:)), keyEquivalent: keyEq)
+            for stack in stackManager.stacks {
+                let item = NSMenuItem(title: stack.name, action: #selector(openStack(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = stack
                 item.toolTip = "\(stack.windows.count) window\(stack.windows.count == 1 ? "" : "s") · \(stack.screens == 1 ? "1 display" : "2 displays")"
@@ -62,8 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let snapshotItem = NSMenuItem(title: "Snapshot to New Stack", action: #selector(snapshotNewStack), keyEquivalent: "s")
-        snapshotItem.keyEquivalentModifierMask = [.command, .shift]
+        let snapshotItem = NSMenuItem(title: "Snapshot to New Stack", action: #selector(snapshotNewStack), keyEquivalent: "")
         snapshotItem.target = self
         menu.addItem(snapshotItem)
 
@@ -89,26 +92,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         statusItem.menu = menu
     }
 
-    @objc func showSettings() {
-        if settingsWindow == nil {
-            let view = SettingsView(stackManager: stackManager)
-            let hostingController = NSHostingController(rootView: view)
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 620),
-                                  styleMask: [.titled, .closable, .resizable, .miniaturizable],
-                                  backing: .buffered, defer: false)
-            window.center()
-            window.contentViewController = hostingController
-            window.title = "Cairn"
-            window.subtitle = "Window Stacks"
-            window.minSize = NSSize(width: 860, height: 560)
-            window.setFrameAutosaveName("CairnMainWindow")
-            window.isReleasedWhenClosed = false
-            self.settingsWindow = window
+    @objc private func showSettings() {
+        navigation.showingSettings = true
+        presentWindow()
+    }
+
+    @objc private func showMainWindow() {
+        navigation.showingSettings = false
+        presentWindow()
+    }
+
+    private func presentWindow() {
+        let window = mainWindow ?? {
+            let view = MainView(stackManager: stackManager, updater: updaterController.updater, navigation: navigation)
+            let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 620),
+                               styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                               backing: .buffered, defer: false)
+            win.center()
+            win.contentViewController = NSHostingController(rootView: view)
+            win.title = "Cairn"
+            win.subtitle = "Window Stacks"
+            win.minSize = NSSize(width: 860, height: 560)
+            win.setFrameAutosaveName("CairnMainWindow")
+            win.isReleasedWhenClosed = false
+            self.mainWindow = win
+            return win
+        }()
+
+        if window.frame.width < 860 || window.frame.height < 560 {
+            window.setContentSize(NSSize(width: max(window.frame.width, 940), height: max(window.frame.height, 620)))
         }
-        if let win = settingsWindow, win.frame.width < 860 || win.frame.height < 560 {
-            win.setContentSize(NSSize(width: max(win.frame.width, 940), height: max(win.frame.height, 620)))
-        }
-        settingsWindow?.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -133,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             let name = self.stackManager.nextDefaultStackName()
             let stack = Stack(name: name, windows: windows)
             self.stackManager.addStack(stack)
-            self.showSettings()
+            self.showMainWindow()
         }
     }
 
