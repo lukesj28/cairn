@@ -162,6 +162,7 @@ struct StacksView: View {
 
             if let id = selectedStackID, stackManager.stacks.contains(where: { $0.id == id }) {
                 StackEditorView(stackID: id, manager: stackManager)
+                    .id(id)
             } else {
                 emptyDetailState
             }

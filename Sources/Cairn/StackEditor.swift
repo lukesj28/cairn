@@ -8,13 +8,18 @@ struct StackEditorView: View {
 
     @State private var selection: UUID?
     @State private var draftName = ""
-    @State private var aspects: [CGFloat] = []
+    @State private var screenChangeCount = 0
     @State private var isSnapshotting = false
     @State private var confirmingDelete = false
     @State private var keyMonitor: Any?
     @FocusState private var nameFocused: Bool
 
     private var stack: Stack? { manager.stacks.first { $0.id == stackID } }
+
+    private var aspects: [CGFloat] {
+        _ = screenChangeCount
+        return Array(repeating: ScreenGeometry.aspectRatio(ofScreen: 0), count: max(1, stack?.screens ?? 1))
+    }
 
     private func mutate(_ change: (inout Stack) -> Void) {
         guard var s = stack else { return }
@@ -39,7 +44,6 @@ struct StackEditorView: View {
         }
         .onAppear {
             draftName = stack?.name ?? ""
-            refreshAspects()
             setupKeyboardMonitor()
         }
         .onDisappear {
@@ -49,9 +53,8 @@ struct StackEditorView: View {
             draftName = stack?.name ?? ""
             selection = nil
         }
-        .onChange(of: stack?.screens ?? 1) { _ in refreshAspects() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            refreshAspects()
+            screenChangeCount += 1
         }
         .confirmationDialog("Delete this stack?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete Stack", role: .destructive) {
@@ -308,12 +311,6 @@ struct StackEditorView: View {
     private func commitName() {
         guard let s = stack, !draftName.trimmingCharacters(in: .whitespaces).isEmpty, s.name != draftName else { return }
         mutate { $0.name = draftName.trimmingCharacters(in: .whitespaces) }
-    }
-
-    private func refreshAspects() {
-        let screens = max(1, stack?.screens ?? 1)
-        let mainAspect = ScreenGeometry.aspectRatio(ofScreen: 0)
-        aspects = Array(repeating: mainAspect, count: screens)
     }
 
     private func snapshotLayout(_ stack: Stack) {
