@@ -3,6 +3,11 @@ import SwiftUI
 import Combine
 import CairnKit
 import Sparkle
+import KeyboardShortcuts
+
+extension KeyboardShortcuts.Name {
+    static let snapshotNewStack = Self("snapshotNewStack")
+}
 
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
@@ -34,6 +39,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
 
         buildMenu()
+
+        KeyboardShortcuts.onKeyUp(for: .snapshotNewStack) { [weak self] in
+            self?.snapshotNewStack()
+        }
 
         stackManager.$stacks
             .receive(on: RunLoop.main)

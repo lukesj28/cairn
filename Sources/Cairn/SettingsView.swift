@@ -1,6 +1,7 @@
 import SwiftUI
 import Sparkle
 import CairnKit
+import KeyboardShortcuts
 
 final class Navigation: ObservableObject {
     @Published var showingSettings = false
@@ -50,6 +51,14 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     Text("Settings")
                         .font(.title.weight(.semibold))
+
+                    section("Shortcut") {
+                        KeyboardShortcuts.Recorder("Snapshot to New Stack:", name: .snapshotNewStack)
+                        Text("Works from any app. Saves your open windows as a new stack.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     section("Updates") {
                         Toggle("Automatically install updates", isOn: $automaticUpdates)
